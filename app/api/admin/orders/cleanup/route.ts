@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
   return performanceMonitor.measure('admin_orders_cleanup_post', async () => {
     try {
       // Rate limiting (stricter for cleanup operations)
-      const rateLimitResult = enhancedRateLimit(request, { max: 10, window: 60000 }) // 10 per minute
+      const rateLimitResult = enhancedRateLimit(request) // 10 per minute
       if (!rateLimitResult.allowed) {
         logSecurityEvent('RATE_LIMIT_EXCEEDED', {
           endpoint: '/api/admin/orders/cleanup',

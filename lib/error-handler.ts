@@ -3,6 +3,8 @@
  * Provides consistent error handling, logging, and user feedback
  */
 
+import { NextResponse } from 'next/server'
+
 export interface AppError {
   code: string
   message: string
@@ -162,25 +164,22 @@ export async function handleAsyncError<T>(
 export function createErrorResponse(
   error: Error | ProductionError | unknown,
   statusCode: number = 500
-): Response {
+): NextResponse {
   // Always return generic "Failed" message - never expose error details
   const userMessage = 'Failed'
   const code = error instanceof ProductionError ? error.code : ErrorCodes.SERVER_ERROR
   
   logError(error)
   
-  return new Response(
-    JSON.stringify({
+  return NextResponse.json(
+    {
       success: false,
       error: userMessage,
       code,
       timestamp: new Date().toISOString(),
-    }),
+    },
     {
       status: error instanceof ProductionError ? error.statusCode : statusCode,
-      headers: {
-        'Content-Type': 'application/json',
-      },
     }
   )
 }

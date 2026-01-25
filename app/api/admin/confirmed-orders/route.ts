@@ -124,7 +124,7 @@ export async function GET(request: NextRequest) {
 
       if (products && !productsError) {
         // Get unique supplier IDs
-        const supplierIds = [...new Set(products.map(p => p.supplier_id || p.user_id).filter(Boolean))]
+        const supplierIds = [...new Set(products.map((p: any) => p.supplier_id || p.user_id).filter(Boolean))]
         
         // Fetch supplier names
         if (supplierIds.length > 0) {
@@ -135,11 +135,11 @@ export async function GET(request: NextRequest) {
           
           if (suppliers) {
             const suppliersMap = new Map<string, string>()
-            suppliers.forEach(supplier => {
+            suppliers.forEach((supplier: any) => {
               suppliersMap.set(supplier.id, supplier.company_name || supplier.full_name || 'Unknown Supplier')
             })
             
-            products.forEach(product => {
+            products.forEach((product: any) => {
               const supplierId = product.supplier_id || product.user_id
               const supplierName = supplierId ? (suppliersMap.get(supplierId) || 'Unknown Supplier') : null
               supplierMap.set(product.id, {
@@ -496,11 +496,13 @@ export async function PATCH(request: NextRequest) {
           }
         }
         
+        // Parse shipping address for use in emails
+        const shippingAddress = typeof confirmedOrder.shipping_address === 'string' 
+          ? JSON.parse(confirmedOrder.shipping_address) 
+          : confirmedOrder.shipping_address
+
         // Fallback to shipping/billing email if no user account email
         if (!customerEmail) {
-          const shippingAddress = typeof confirmedOrder.shipping_address === 'string' 
-            ? JSON.parse(confirmedOrder.shipping_address) 
-            : confirmedOrder.shipping_address
           customerEmail = shippingAddress?.email || 
                          (typeof confirmedOrder.billing_address === 'string' 
                            ? JSON.parse(confirmedOrder.billing_address)?.email 
@@ -521,13 +523,14 @@ export async function PATCH(request: NextRequest) {
             
             await sendPickupReminderEmail(customerEmail, {
               orderNumber: confirmedOrder.order_number || id.toString(),
+              pickupId: confirmedOrder.order_number || id.toString(),
               pickupLocation: shippingAddress?.address || 'Store Location',
-              pickupDate: confirmedOrder.estimated_delivery || new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toLocaleDateString(),
+              pickupInstructions: 'Please bring a valid ID when picking up your order.',
+              availableTimes: 'Monday - Friday: 9:00 AM - 6:00 PM',
               items: orderItems?.map((item: any) => ({
                 name: item.product_name,
                 quantity: item.quantity
-              })) || [],
-              orderUrl: buildUrl(`/account/orders/${confirmedOrder.order_number || id}`)
+              })) || []
             })
           }
           // Handle shipping notification separately

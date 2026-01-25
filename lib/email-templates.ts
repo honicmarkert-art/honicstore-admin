@@ -9,6 +9,12 @@ export interface EmailTemplateOptions {
   companyLogo?: string
   primaryColor?: string
   supportEmail?: string
+  contactEmail?: string
+  salesEmail?: string
+  legalEmail?: string
+  privacyEmail?: string
+  dpoEmail?: string
+  securityEmail?: string
   unsubscribeUrl?: string
 }
 

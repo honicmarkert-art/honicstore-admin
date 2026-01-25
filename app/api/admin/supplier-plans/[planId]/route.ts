@@ -101,7 +101,7 @@ export async function PUT(
       }
 
       // If slug is being updated, check for conflicts
-      if (validatedData.slug && validatedData.slug !== existingPlan.slug) {
+      if (validatedData.slug && validatedData.slug !== (existingPlan as any).slug) {
         const { data: conflictingPlan } = await supabase
           .from('supplier_plans')
           .select('id')

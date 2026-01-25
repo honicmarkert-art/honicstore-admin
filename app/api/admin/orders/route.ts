@@ -274,7 +274,7 @@ export async function GET(request: NextRequest) {
       }
 
       // Transform the data to include order items in a more accessible format
-      const transformedOrders = (orders || []).map(order => ({
+      const transformedOrders = (orders || []).map((order: any) => ({
         ...order,
         order_items: order.order_items || [],
         // Calculate total items count from order_items

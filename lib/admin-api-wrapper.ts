@@ -36,9 +36,11 @@ export function handleAdminAuthError(
     logError(new Error(errorMessage), {
       userId: user?.id,
       action: actionName,
-      endpoint,
-      authErrorStatus: authError.status,
-      authErrorStatusText: authError.statusText
+      metadata: {
+        endpoint,
+        authErrorStatus: authError.status,
+        authErrorStatusText: authError.statusText
+      }
     })
   }
   return authError

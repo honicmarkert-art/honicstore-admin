@@ -63,9 +63,12 @@ export function blockNonAdmin(accessResult: AdminAccessResult): NextResponse | n
     return null // Allow access
   }
 
-  // Log security event
-  .toISOString()
-  })
+  // Log security event (commented out - can be enabled if needed)
+  // logSecurityEvent('ADMIN_ACCESS_DENIED', {
+  //   userId: accessResult.user?.id,
+  //   endpoint: request.nextUrl.pathname,
+  //   reason: accessResult.error
+  // }, request)
 
   // Return appropriate error response
   return NextResponse.json(

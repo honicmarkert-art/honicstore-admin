@@ -267,10 +267,11 @@ export async function POST(request: NextRequest) {
 
           // Send email
           const emailResult = await sendBackInStockEmail(profile.email, {
-            productName: product.name,
-            productImage: product.image,
-            productPrice: product.price,
-            productUrl: buildUrl(`/products/${product.slug || product.id}`)
+            name: product.name,
+            image: product.image,
+            price: product.price,
+            productUrl: buildUrl(`/products/${product.slug || product.id}`),
+            stockQuantity: product.stock_quantity
           })
 
           if (emailResult.success) {
@@ -292,7 +293,6 @@ export async function POST(request: NextRequest) {
                 email_type: 'back_in_stock',
                 subject: `${product.name} is back in stock!`,
                 status: 'sent',
-                message_id: emailResult.messageId,
                 metadata: {
                   notification_id: notification.id,
                   product_id: product.id
