@@ -27,7 +27,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = 'login', redirectUrl }
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [currentTab] = useState<'login'>('login')
+  const [currentTab, setCurrentTab] = useState<'login'>('login')
   const { toast } = useToast()
   const { signIn, signInWithGoogle, user } = useAuth()
   const router = useRouter()
@@ -108,7 +108,6 @@ export function AuthModal({ isOpen, onClose, defaultTab = 'login', redirectUrl }
       // Clear all messages and state when modal closes
       setAuthError("")
       setAuthSuccess("")
-      setRegisteredEmail("")
       setIsLoading(false)
       setIsGoogleLoading(false)
       // Clear login form
