@@ -1,8 +1,5 @@
 "use client"
 
-// Force dynamic rendering
-export const dynamic = 'force-dynamic'
-
 import { useState, useMemo, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Image from "next/image"

@@ -5,7 +5,7 @@ import { AuthModal } from '@/components/auth-modal'
 import { useAuth } from '@/contexts/auth-context'
 
 interface GlobalAuthModalContextType {
-  openAuthModal: (tab?: 'login' | 'register', redirectUrl?: string) => void
+  openAuthModal: (tab?: 'login', redirectUrl?: string) => void
   closeAuthModal: () => void
   isOpen: boolean
 }
@@ -14,7 +14,7 @@ const GlobalAuthModalContext = createContext<GlobalAuthModalContextType | undefi
 
 export function GlobalAuthModalProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false)
-  const [defaultTab, setDefaultTab] = useState<'login' | 'register'>('login')
+  const [defaultTab, setDefaultTab] = useState<'login'>('login')
   const [redirectUrl, setRedirectUrl] = useState<string | undefined>(undefined)
   const { isAuthenticated, user } = useAuth()
 
@@ -62,7 +62,7 @@ export function GlobalAuthModalProvider({ children }: { children: ReactNode }) {
     } catch {}
   }, [isAuthenticated, user, redirectUrl])
 
-  const openAuthModal = (tab: 'login' | 'register' = 'login', redirectUrl?: string) => {
+  const openAuthModal = (tab: 'login' = 'login', redirectUrl?: string) => {
     // Allow opening modal for supplier flows even if already authenticated
     // This allows users to switch accounts or log in with a different supplier account
     const isSupplierFlow = redirectUrl?.startsWith('/supplier') || 
@@ -142,11 +142,11 @@ export function useGlobalAuthModal() {
 }
 
 // Lightweight bridge to listen for a DOM event and open the modal
-function EventBridge({ onOpen }: { onOpen: (tab: 'login' | 'register', url?: string) => void }) {
+function EventBridge({ onOpen }: { onOpen: (tab: 'login', url?: string) => void }) {
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail || {}
-      const tab = detail.tab === 'register' ? 'register' : 'login'
+      const tab = 'login'
       const redirectUrl = detail.redirectUrl as string | undefined
       onOpen(tab, redirectUrl)
     }
@@ -163,7 +163,7 @@ function EventBridge({ onOpen }: { onOpen: (tab: 'login' | 'register', url?: str
 }
 
 // Global click interceptor to open modal when clicking auth links anywhere
-function ClickInterceptor({ onOpen }: { onOpen: (tab: 'login' | 'register') => void }) {
+function ClickInterceptor({ onOpen }: { onOpen: (tab: 'login') => void }) {
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (e.defaultPrevented) return
@@ -179,9 +179,9 @@ function ClickInterceptor({ onOpen }: { onOpen: (tab: 'login' | 'register') => v
           try {
             const url = new URL(el.href)
             const path = url.pathname
-            if (path === '/auth/login' || path === '/auth/register') {
+            if (path === '/auth/login') {
               e.preventDefault()
-              onOpen(path.endsWith('register') ? 'register' : 'login')
+              onOpen('login')
               return
             }
           } catch {}

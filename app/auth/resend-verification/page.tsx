@@ -19,7 +19,7 @@ export default function ResendVerificationPage() {
 
     try {
       const { error } = await supabaseClient.auth.resend({
-        type: 'signup',
+        type: 'email',
         email: email,
       })
 

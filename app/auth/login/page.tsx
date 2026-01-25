@@ -154,15 +154,6 @@ function LoginPageContent() {
               </Button>
             </form>
 
-            <div className="mt-4 text-center text-sm">
-              <span className="text-gray-600 dark:text-gray-400">Don't have an account? </span>
-              <Link 
-                href="/auth/register" 
-                className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium underline"
-              >
-                Register here
-              </Link>
-            </div>
 
           </CardContent>
         </Card>

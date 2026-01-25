@@ -140,9 +140,6 @@ export function UserProfile() {
               Sign in
             </Button>
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => openAuthModal('register')} className="p-2">
-            <span className="text-gray-400 hover:text-white cursor-pointer">Register</span>
-          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => router.push('/account/orders')}>
             <ShoppingBag className="mr-2 h-4 w-4" />

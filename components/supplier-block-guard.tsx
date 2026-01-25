@@ -68,7 +68,7 @@ export function SupplierBlockGuard({ children, fallback }: SupplierBlockGuardPro
 
             <div className="space-y-3">
               <Button
-                onClick={() => openAuthModal('register')}
+                onClick={() => openAuthModal('login')}
                 className="w-full bg-gradient-to-r from-orange-500 to-yellow-500 hover:from-orange-600 hover:to-yellow-600 text-white font-semibold py-6 text-lg shadow-lg hover:shadow-xl transition-all"
               >
                 <UserPlus className="w-5 h-5 mr-2" />
