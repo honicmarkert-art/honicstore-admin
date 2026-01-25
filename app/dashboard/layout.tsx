@@ -94,7 +94,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           description: "Admin privileges required to access this area",
           variant: "destructive"
         })
-        router.push('/home')
+        router.push('/dashboard')
         return
       }
       }, 1000) // 1 second delay to allow 2FA form to show
@@ -274,13 +274,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 />
                 <span className="text-lg font-semibold">Admin Panel</span>
               </Link>
-              <Link 
-                href="/home" 
+              <a 
+                href="https://honiccompanystore.com" 
+                target="_blank"
+                rel="noopener noreferrer"
                 className={cn("ml-2 text-sm text-blue-500 hover:text-blue-600 underline", themeClasses.mainText)}
                 title="Go to main site"
               >
                 Home
-              </Link>
+              </a>
             </div>
             <Button
               variant="ghost"

@@ -47,11 +47,11 @@ export default function NewProductPage() {
     // Simulate API call
     await new Promise(resolve => setTimeout(resolve, 1000))
     setIsSaving(false)
-    router.push("/admin")
+    router.push("/dashboard/products")
   }
 
   const handleCancel = () => {
-    router.push("/admin")
+    router.push("/dashboard/products")
   }
 
   return (

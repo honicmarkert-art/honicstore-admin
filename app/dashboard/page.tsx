@@ -386,7 +386,7 @@ export default function AdminDashboard() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-6 md:grid-cols-4">
-            <Link href="/admin/products/new">
+            <Link href="/dashboard/products/new">
               <Button className="flex items-center gap-3 w-full h-12 text-base">
                 <Plus className="h-5 w-5" />
                 Add Product

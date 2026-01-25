@@ -258,17 +258,17 @@ function AuthCallbackContent() {
                     // Redirect based on user type after auth context is refreshed
                     setTimeout(() => {
                       if (isSupplier) {
-                        router.push('/supplier/dashboard')
+                        router.push('/dashboard')
                       } else {
-                        router.push('/products')
+                        router.push('/dashboard/products')
                       }
                     }, 500) // Small delay to ensure context is updated
                   }).catch((refreshError) => {
                     // Still redirect based on user type
                     if (isSupplier) {
-                      router.push('/supplier/dashboard')
+                      router.push('/dashboard')
                     } else {
-                      router.push('/products')
+                      router.push('/dashboard/products')
                     }
                   })
                 } catch (profileError) {
