@@ -284,8 +284,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = 'login', redirectUrl }
 
         {/* Redirect Card removed - redirect happens immediately via AuthContext */}
 
-        {currentTab === 'login' ? (
-          <Card className="border-0 shadow-none mt-4 bg-white dark:bg-gray-900">
+        <Card className="border-0 shadow-none mt-4 bg-white dark:bg-gray-900">
             <CardHeader className="px-4 pb-1">
               <CardTitle className="text-sm text-gray-900 dark:text-gray-100">Sign In to Your Account</CardTitle>
               <CardDescription className="text-xs text-gray-600 dark:text-gray-400">
@@ -534,7 +533,6 @@ export function AuthModal({ isOpen, onClose, defaultTab = 'login', redirectUrl }
 
             </CardContent>
           </Card>
-        )}
       </DialogContent>
     </Dialog>
   )
