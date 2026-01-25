@@ -98,14 +98,14 @@ All admin API routes are available under `/api/admin/*`:
 
 ## Git Repository
 
-To push to a new repository:
+Repository: https://github.com/honicmarkert-art/honicstore-admin
+
+The repository is already configured and pushed to GitHub. To update:
 
 ```bash
-# Add remote (replace with your repository URL)
-git remote add origin https://github.com/your-username/honicstore-admin.git
-
-# Push to remote
-git push -u origin master
+git add .
+git commit -m "Your commit message"
+git push origin main
 ```
 
 ## Notes
@@ -114,3 +114,5 @@ git push -u origin master
 - All admin functionality has been extracted here
 - The main app can continue to operate without admin routes
 - Both apps share the same Supabase database
+- Deployed on Vercel at: `siem.honiccompanystore.com`
+- Last updated: January 2025
