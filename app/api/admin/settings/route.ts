@@ -117,11 +117,11 @@ const adminSettingsSchema = z.object({
   }).optional(),
   
   seo: z.object({
-    metaTitle: z.string(),
-    metaDescription: z.string(),
-    metaKeywords: z.string(),
-    ogImage: z.string(),
-    favicon: z.string()
+    metaTitle: z.string().optional(),
+    metaDescription: z.string().optional(),
+    metaKeywords: z.string().optional(),
+    ogImage: z.string().optional(),
+    favicon: z.string().optional()
   }).optional(),
   
   socialLinks: z.object({

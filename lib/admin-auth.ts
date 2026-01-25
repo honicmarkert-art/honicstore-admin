@@ -48,45 +48,11 @@ export async function validateAdminAccess(): Promise<{ user: AdminUser | null; e
       }
     )
 
-    // Debug cookies
-    const allCookies = cookieStore.getAll()
+    // Use getUser() first - this authenticates by contacting the Supabase Auth server
+    // This is more secure than getSession() which only reads from cookies/local storage
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
     
-    // Check for specific Supabase session cookies
-    const sessionCookies = allCookies.filter(c => c.name.includes('sb-') || c.name.includes('supabase'))
-    
-    // Get current session
-    const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession()
-    let session = initialSession
-    
-    if (sessionError || !session) {
-      // Try alternative session retrieval
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError || !user) {
-        return {
-          user: null,
-          error: NextResponse.json(
-            { error: 'Authentication required', message: 'Please log in to access admin features' },
-            { status: 401 }
-          )
-        }
-      }
-      
-      // If we have a user but no session, create a minimal session object
-      const minimalSession = {
-        user: user,
-        access_token: null,
-        refresh_token: null,
-        expires_in: 0,
-        expires_at: 0,
-        token_type: 'bearer'
-      }
-      
-      if (DEBUG) // Continue with the minimal session
-      session = minimalSession as any
-    }
-
-    // Ensure session is not null at this point
-    if (!session) {
+    if (userError || !user) {
       return {
         user: null,
         error: NextResponse.json(
@@ -96,11 +62,20 @@ export async function validateAdminAccess(): Promise<{ user: AdminUser | null; e
       }
     }
 
+    // Get session for additional token information (optional, but useful for token refresh)
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    
+    // If session is missing but user is valid, we can still proceed with user data
+    // The user object from getUser() is sufficient for authentication
+    if (sessionError && DEBUG) {
+      console.log('Session retrieval warning:', sessionError.message)
+    }
+
     // Get user profile with role information
     const { data: initialProfile, error: profileError } = await supabase
       .from('profiles')
       .select('*')
-      .eq('id', session.user.id)
+      .eq('id', user.id)
       .single()
     let profile = initialProfile
 
@@ -112,9 +87,9 @@ export async function validateAdminAccess(): Promise<{ user: AdminUser | null; e
           const { data: newProfile, error: createError } = await supabase
             .from('profiles')
             .insert({
-              id: session.user.id,
-              email: session.user.email,
-              full_name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || 'User',
+              id: user.id,
+              email: user.email,
+              full_name: user.user_metadata?.full_name || user.user_metadata?.name || 'User',
               is_admin: false,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString()
@@ -129,7 +104,7 @@ export async function validateAdminAccess(): Promise<{ user: AdminUser | null; e
               const { data: existingProfile, error: fetchError } = await supabase
                 .from('profiles')
                 .select('*')
-                .eq('id', session.user.id)
+                .eq('id', user.id)
                 .single()
               
               if (fetchError || !existingProfile) {
@@ -199,8 +174,8 @@ export async function validateAdminAccess(): Promise<{ user: AdminUser | null; e
 
     return {
       user: {
-        id: session.user.id,
-        email: session.user.email || '',
+        id: user.id,
+        email: user.email || '',
         role: 'admin',
         isAdmin: true
       },

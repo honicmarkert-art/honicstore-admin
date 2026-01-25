@@ -1,17 +1,21 @@
+"use client"
+
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
+
 export default function AdminDashboard() {
+  const router = useRouter()
+
+  useEffect(() => {
+    // Redirect to login
+    router.push('/auth/login')
+  }, [router])
+
   return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4">Honicstore Admin Dashboard</h1>
-        <p className="text-muted-foreground mb-2">
-          Admin API routes are available at /api/admin/*
-        </p>
-        <p className="text-sm text-muted-foreground">
-          Deployed on Vercel - siem.honiccompanystore.com
-        </p>
-        <p className="text-xs text-muted-foreground mt-4">
-          Version: 1.0.0
-        </p>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
+        <p className="text-muted-foreground">Redirecting to login...</p>
       </div>
     </div>
   )
