@@ -9,6 +9,9 @@ export default function AdminDashboard() {
         <p className="text-sm text-muted-foreground">
           Deployed on Vercel - siem.honiccompanystore.com
         </p>
+        <p className="text-xs text-muted-foreground mt-4">
+          Version: 1.0.0
+        </p>
       </div>
     </div>
   )
