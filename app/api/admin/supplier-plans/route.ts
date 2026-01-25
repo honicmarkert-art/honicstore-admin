@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { validateAdminAccess, createAdminSupabaseClient } from '@/lib/admin-auth'
 import { logger } from '@/lib/logger'
 import { z } from 'zod'
-import { clearSupplierPlansCache } from '../../supplier-plans/route'
 import { enhancedRateLimit, logSecurityEvent } from '@/lib/enhanced-rate-limit'
 import { performanceMonitor } from '@/lib/performance-monitor'
 import { getCachedData, setCachedData } from '@/lib/database-optimization'
@@ -10,6 +9,11 @@ import { logError, createErrorResponse } from '@/lib/error-handler'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+
+// Function to clear supplier plans cache (used by admin routes)
+export function clearSupplierPlansCache() {
+  setCachedData('admin_supplier_plans_all', null, 0)
+}
 
 // Schema for plan creation/update
 const planSchema = z.object({
