@@ -104,6 +104,8 @@ export default function AdminOrdersPage() {
   const [newOrderNotification, setNewOrderNotification] = useState<string | null>(null)
   const [forceUpdate, setForceUpdate] = useState(0)
   const [isCleaningUp, setIsCleaningUp] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [orderToDelete, setOrderToDelete] = useState<Order | null>(null)
   const newOrderSoundRef = useRef<HTMLAudioElement | null>(null)
 
   // Fetch orders from API
@@ -600,38 +602,27 @@ export default function AdminOrdersPage() {
         const confirmData = await confirmResponse.json().catch(() => ({}))
         logger.log('✅ Order successfully moved to confirmed_orders table:', confirmData)
         
-        // Update the order status and confirmation status in the database
-        const newStatus = order.deliveryOption === 'pickup' ? 'ready_for_pickup' : 'confirmed'
-        
+        // Delete the order from the orders table since it's now in confirmed_orders
         try {
-          const updateResponse = await fetch(`/api/admin/orders/${order.id}`, {
-            method: 'PATCH',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              status: newStatus,
-              confirmationStatus: 'confirmed'
-            })
+          const deleteResponse = await fetch(`/api/admin/orders?id=${order.id}`, {
+            method: 'DELETE'
           })
 
-          if (updateResponse.ok) {
-            logger.log('✅ Order status updated in database to:', newStatus)
+          if (deleteResponse.ok) {
+            logger.log('✅ Order deleted from orders table:', order.orderNumber)
           } else {
-            const errorData = await updateResponse.json().catch(() => ({ error: 'Unknown error' }))
-            logger.log('⚠️ Continuing with local state update only')
+            const errorData = await deleteResponse.json().catch(() => ({ error: 'Unknown error' }))
+            logger.log('⚠️ Failed to delete order from orders table:', errorData)
+            // Continue anyway - order is already in confirmed_orders
           }
-        } catch (updateError) {
-          logger.log('⚠️ Continuing with local state update only')
+        } catch (deleteError) {
+          logger.log('⚠️ Error deleting order from orders table:', deleteError)
+          // Continue anyway - order is already in confirmed_orders
         }
         
-        // Mark order as confirmed (but don't delete yet)
+        // Remove order from list immediately (it will appear in confirmed-orders page)
         setOrders(prevOrders => 
-          prevOrders.map(o => 
-            o.id === order.id 
-              ? { ...o, status: newStatus }
-              : o
-          )
+          prevOrders.filter(o => o.id !== order.id)
         )
 
         const statusMessage = order.deliveryOption === 'pickup' 
@@ -702,24 +693,21 @@ export default function AdminOrdersPage() {
     }
   }
 
-  const deleteOrder = async (order: Order) => {
+  const openDeleteDialog = (order: Order) => {
     // Only allow deletion of failed or unpaid orders
     const allowedStatuses = ['failed', 'unpaid', 'pending']
     if (!allowedStatuses.includes(order.paymentStatus)) {
       return
     }
+    setOrderToDelete(order)
+    setDeleteDialogOpen(true)
+  }
 
-    const confirmed = window.confirm(
-      `Are you sure you want to delete order ${order.orderNumber}?\n\n` +
-      `This will permanently remove the order and all its items.\n` +
-      `Payment Status: ${order.paymentStatus.toUpperCase()}\n\n` +
-      `This action cannot be undone.`
-    )
-    
-    if (!confirmed) return
+  const deleteOrder = async () => {
+    if (!orderToDelete) return
 
     try {
-      const res = await fetch(`/api/admin/orders?id=${order.id}`, { 
+      const res = await fetch(`/api/admin/orders?id=${orderToDelete.id}`, { 
         method: 'DELETE' 
       })
       
@@ -730,9 +718,13 @@ export default function AdminOrdersPage() {
 
       const result = await res.json()
       
-      // Refresh the orders list
+      // Close dialog and refresh the orders list
+      setDeleteDialogOpen(false)
+      setOrderToDelete(null)
       await fetchOrders()
     } catch (error: any) {
+      setDeleteDialogOpen(false)
+      setOrderToDelete(null)
     }
   }
 
@@ -1157,7 +1149,7 @@ export default function AdminOrdersPage() {
                       {order.paymentStatus === 'paid' && order.status === 'pending' && (
                         <Button 
                           size="sm" 
-                          className="bg-green-600 hover:bg-green-700" 
+                          className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed" 
                           onClick={() => confirmOrder(order)}
                           disabled={order.isConfirming || order.status === 'confirmed' || order.status === 'ready_for_pickup'}
                         >
@@ -1167,26 +1159,15 @@ export default function AdminOrdersPage() {
                               Confirming...
                             </>
                           ) : order.status === 'confirmed' || order.status === 'ready_for_pickup' ? (
-                            'Already Confirmed'
-                          ) : (
-                            'Confirm Order'
-                          )}
-                        </Button>
-                      )}
-                      {(order.status === 'confirmed' || order.status === 'ready_for_pickup') && (
-                        <Button 
-                          size="sm" 
-                          className="bg-orange-600 hover:bg-orange-700" 
-                          onClick={() => clearConfirmedOrder(order)}
-                          disabled={order.isConfirming}
-                        >
-                          {order.isConfirming ? (
                             <>
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                              Clearing...
+                              <CheckCircle className="w-4 h-4 mr-2" />
+                              Confirmed
                             </>
                           ) : (
-                            'Clear Confirmed'
+                            <>
+                              <CheckCircle className="w-4 h-4 mr-2" />
+                              Confirm Order
+                            </>
                           )}
                         </Button>
                       )}
@@ -1195,15 +1176,10 @@ export default function AdminOrdersPage() {
                           size="sm" 
                           variant="destructive" 
                           className="flex items-center gap-2" 
-                          onClick={() => deleteOrder(order)}
+                          onClick={() => openDeleteDialog(order)}
                         >
                           <Trash2 className="w-4 h-4" />
                           Delete Order
-                        </Button>
-                      )}
-                      {order.status === 'confirmed' && (
-                        <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
-                          Mark Shipped
                         </Button>
                       )}
                     </div>
@@ -1628,6 +1604,64 @@ export default function AdminOrdersPage() {
                     </p>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-red-600" />
+              Delete Order
+            </DialogTitle>
+            <DialogDescription>
+              This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {orderToDelete && (
+            <div className="space-y-4">
+              <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                <p className={cn("font-semibold text-red-900 dark:text-red-200 mb-2")}>
+                  Are you sure you want to delete order {orderToDelete.orderNumber}?
+                </p>
+                <div className="space-y-2 text-sm">
+                  <p className={cn("text-red-800 dark:text-red-300")}>
+                    This will permanently remove the order and all its items.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className={cn("font-medium", themeClasses.mainText)}>Payment Status:</span>
+                    <Badge className={cn(
+                      orderToDelete.paymentStatus === 'paid' 
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300' 
+                        : 'bg-amber-100 text-amber-800 dark:bg-amber-900/20 dark:text-amber-300'
+                    )}>
+                      {orderToDelete.paymentStatus.toUpperCase()}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setDeleteDialogOpen(false)
+                    setOrderToDelete(null)
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={deleteOrder}
+                  className="flex items-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete Order
+                </Button>
               </div>
             </div>
           )}
