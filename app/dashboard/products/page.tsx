@@ -339,30 +339,29 @@ function AdminProductsContent() {
                 onSave={async (productData) => {
                   try {
                     if (editingProduct) {
-                      await updateProduct(editingProduct.id, productData)
+                      const updatedFromApi = await updateProduct(editingProduct.id, productData)
                       toast({ title: 'Product updated successfully' })
                       
-                      // Small delay to ensure database has processed the update
-                      await new Promise(resolve => setTimeout(resolve, 100))
+                      // Small delay so DB/API can serve fresh data
+                      await new Promise(resolve => setTimeout(resolve, 200))
                       
-                      // Refresh the product data after update
                       const refreshedProduct = await fetchFullProductDetails(editingProduct.id)
-                      if (refreshedProduct) {
-                        setEditingProduct(refreshedProduct)
-                      } else {
-                        }
+                      const productToUse = refreshedProduct ?? updatedFromApi
+                      setEditingProduct(productToUse)
+                      
+                      // Update list in place so form preview gets latest data without full page refresh
+                      setLoadedProducts(prev => prev.map(p => p.id === editingProduct.id ? (productToUse || p) : p))
+                      return productToUse
                     } else {
                       const newProduct = await addProduct(productData)
                       toast({ title: 'Product created successfully' })
-                      
-                      // Load the newly created product into the form for further editing
                       if (newProduct) {
                         setEditingProduct(newProduct)
+                        setLoadedProducts(prev => [newProduct, ...prev])
+                        setTotalCount(c => c + 1)
                       }
+                      return newProduct ?? undefined
                     }
-                    
-                    // Force refresh the products list to ensure UI is up to date
-                    await handleRefresh()
                   } catch (error) {
                     
                     // Show user-friendly error message

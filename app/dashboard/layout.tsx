@@ -449,7 +449,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto" suppressHydrationWarning>
-          <div className="py-6" suppressHydrationWarning>
+          <div className="pt-8 pb-6" suppressHydrationWarning>
             <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8" suppressHydrationWarning>
               {children}
             </div>

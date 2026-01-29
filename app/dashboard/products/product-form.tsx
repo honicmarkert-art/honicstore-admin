@@ -150,8 +150,8 @@ export function ProductForm({ product, onClose, onSave, autoCloseOnSave = true, 
         }),
         video: product.video ?? "",
         view360: product.view360 ?? "",
-        variantImages: product.variantImages || [],
-        specificationImages: product.specificationImages || product.specification_images || [],
+        variantImages: product.variantImages ?? product.variant_images ?? [],
+        specificationImages: product.specificationImages ?? product.specification_images ?? [],
         // Stock and delivery settings
         inStock: product.inStock !== undefined ? product.inStock : true,
         stockQuantity: product.stockQuantity?.toString() ?? "",
@@ -959,7 +959,7 @@ export function ProductForm({ product, onClose, onSave, autoCloseOnSave = true, 
             model: updatedProduct.model ?? prev.model,
             image: updatedProduct.image ?? prev.image,
             specifications: updatedProduct.specifications || prev.specifications,
-            variants: (updatedProduct.variants || prev.variants).map((variant: any) => {
+            variants: ((updatedProduct.variants ?? prev.variants) || []).map((variant: any) => {
               // Use the new stock_quantities structure
               const quantities = variant.quantities || {}
               const attributes = variant.attributes ? { ...variant.attributes } : {}
@@ -979,7 +979,8 @@ export function ProductForm({ product, onClose, onSave, autoCloseOnSave = true, 
             }),
             video: updatedProduct.video ?? prev.video,
             view360: updatedProduct.view360 ?? prev.view360,
-            variantImages: updatedProduct.variantImages || prev.variantImages,
+            variantImages: updatedProduct.variantImages ?? updatedProduct.variant_images ?? prev.variantImages,
+            specificationImages: updatedProduct.specificationImages ?? updatedProduct.specification_images ?? prev.specificationImages,
             // Stock and delivery settings
             inStock: updatedProduct.inStock ?? prev.inStock,
             stockQuantity: updatedProduct.stockQuantity?.toString() ?? prev.stockQuantity,

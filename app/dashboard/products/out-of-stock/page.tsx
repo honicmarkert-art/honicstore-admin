@@ -649,19 +649,15 @@ function AdminOutOfStockProductsContent() {
               onSave={async (productData) => {
                 try {
                   if (editingProduct.id) {
-                    await updateProduct(editingProduct.id, productData)
+                    const updatedFromApi = await updateProduct(editingProduct.id, productData)
                     toast({ title: 'Product updated successfully' })
-                    
-                    // Refresh the product data after update
-                    await new Promise(resolve => setTimeout(resolve, 100))
+                    await new Promise(resolve => setTimeout(resolve, 200))
                     const refreshedProduct = await fetchFullProductDetails(editingProduct.id)
-                    if (refreshedProduct) {
-                      setEditingProduct(refreshedProduct)
-                    }
+                    const productToUse = refreshedProduct ?? updatedFromApi
+                    setEditingProduct(productToUse)
+                    setLoadedProducts(prev => prev.map(p => p.id === editingProduct.id ? (productToUse || p) : p))
+                    return productToUse
                   }
-                  
-                  // Force refresh the products list
-                  await handleRefresh()
                 } catch (error) {
                   const errorMessage = error instanceof Error ? error.message : 'Failed to save product'
                   toast({
@@ -669,6 +665,7 @@ function AdminOutOfStockProductsContent() {
                     description: errorMessage,
                     variant: 'destructive'
                   })
+                  throw error
                 }
               }}
               onCancel={() => setIsAddDialogOpen(false)}
