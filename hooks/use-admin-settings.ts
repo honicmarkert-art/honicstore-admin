@@ -12,7 +12,6 @@ const DEFAULT_ADMIN_SETTINGS = {
   companyLogo: "/android-chrome-512x512.png",
   mainHeadline: "The leading B2B ecommerce platform for global trade",
   heroBackgroundImage: "",
-  heroTaglineAlignment: "left",
   
   // Service Images (Multiple images support)
   serviceRetailImages: [],
@@ -324,7 +323,6 @@ export function useAdminSettings() {
     companyLogo: settings.companyLogo,
     mainHeadline: settings.mainHeadline,
     heroBackgroundImage: settings.heroBackgroundImage,
-    heroTaglineAlignment: settings.heroTaglineAlignment,
     serviceRetailImages: settings.serviceRetailImages || [],
     servicePrototypingImages: settings.servicePrototypingImages || [],
     servicePcbImages: settings.servicePcbImages || [],

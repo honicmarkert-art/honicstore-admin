@@ -7,6 +7,10 @@ import { enhancedRateLimit, logSecurityEvent } from '@/lib/enhanced-rate-limit'
 import { performanceMonitor } from '@/lib/performance-monitor'
 import { getCachedData, setCachedData } from '@/lib/database-optimization'
 import { logError, createErrorResponse } from '@/lib/error-handler'
+import {
+  extractHeroImagesObjectPath,
+  removeHeroObjectFromBucket,
+} from '@/lib/hero-storage'
 
 // Comprehensive validation schema for all admin settings
 const adminSettingsSchema = z.object({
@@ -17,7 +21,6 @@ const adminSettingsSchema = z.object({
   companyLogo: z.string().min(1, 'Company logo is required').optional(),
   mainHeadline: z.string().min(1, 'Main headline is required').optional(),
   heroBackgroundImage: z.string().optional(),
-  heroTaglineAlignment: z.enum(['left', 'center', 'right']).optional(),
   
   // Service Images (now supports multiple images)
   serviceRetailImages: z.array(z.string()).optional(),
@@ -262,7 +265,6 @@ export async function GET(request: NextRequest) {
           companyLogo: '/android-chrome-512x512.png',
           mainHeadline: 'The leading B2B ecommerce platform for global trade',
           heroBackgroundImage: '',
-          heroTaglineAlignment: 'left',
           serviceRetailImage: '',
           servicePrototypingImage: '',
           servicePcbImage: '',
@@ -369,7 +371,6 @@ export async function GET(request: NextRequest) {
         companyLogo: settings.company_logo || '/android-chrome-512x512.png',
         mainHeadline: settings.main_headline || 'The leading B2B ecommerce platform for global trade',
         heroBackgroundImage: settings.hero_background_image || '',
-        heroTaglineAlignment: settings.hero_tagline_alignment || 'left',
         serviceRetailImages: settings.service_retail_images || [],
         servicePrototypingImages: settings.service_prototyping_images || [],
         servicePcbImages: settings.service_pcb_images || [],
@@ -504,7 +505,6 @@ export async function GET(request: NextRequest) {
           companyLogo: '/android-chrome-512x512.png',
           mainHeadline: 'The leading B2B ecommerce platform for global trade',
           heroBackgroundImage: '',
-          heroTaglineAlignment: 'left',
           serviceRetailImage: '',
           servicePrototypingImage: '',
           servicePcbImage: '',
@@ -682,6 +682,16 @@ export async function POST(request: NextRequest) {
       }
     )
 
+    let previousHeroBackgroundUrl: string | undefined
+    if (validatedData.heroBackgroundImage !== undefined) {
+      const { data: prevHeroRow } = await supabase
+        .from('admin_settings')
+        .select('hero_background_image')
+        .eq('id', 1)
+        .maybeSingle()
+      previousHeroBackgroundUrl = prevHeroRow?.hero_background_image ?? undefined
+    }
+
     // Map API fields to database fields
     const dbData: any = {
       updated_at: new Date().toISOString()
@@ -708,10 +718,6 @@ export async function POST(request: NextRequest) {
       } catch (error) {
         logger.log('⚠️ hero_background_image column not available, skipping update')
       }
-    }
-    // Hero tagline alignment - ENABLED AFTER SQL MIGRATION
-    if (validatedData.heroTaglineAlignment !== undefined) {
-      dbData.hero_tagline_alignment = validatedData.heroTaglineAlignment
     }
     // Service Images - Multiple images support
     try {
@@ -849,7 +855,23 @@ export async function POST(request: NextRequest) {
         return createErrorResponse(updateError, 500)
       }
 
-    
+    if (validatedData.heroBackgroundImage !== undefined) {
+      const newUrl = validatedData.heroBackgroundImage
+      const oldUrl = previousHeroBackgroundUrl ?? ''
+      try {
+        if (newUrl === '') {
+          await removeHeroObjectFromBucket(supabase, oldUrl)
+        } else if (oldUrl && oldUrl !== newUrl) {
+          const oldPath = extractHeroImagesObjectPath(oldUrl)
+          const newPath = extractHeroImagesObjectPath(newUrl)
+          if (oldPath && oldPath !== newPath) {
+            await removeHeroObjectFromBucket(supabase, oldUrl)
+          }
+        }
+      } catch (e) {
+        logger.log('⚠️ Hero background storage cleanup failed:', e)
+      }
+    }
 
     // Re-select to verify persistence and return the final stored value
     const { data: verifyRow, error: verifyError } = await supabase

@@ -10,7 +10,6 @@ interface CompanyContextType {
   companyTagline: string
   mainHeadline: string
   heroBackgroundImage: string
-  heroTaglineAlignment: string
   serviceRetailImages: string[]
   servicePrototypingImages: string[]
   servicePcbImages: string[]
@@ -29,13 +28,11 @@ interface CompanyContextType {
   updateCompanyLogo: (logo: string) => Promise<boolean>
   updateMainHeadline: (headline: string) => Promise<boolean>
   updateHeroBackgroundImage: (image: string) => Promise<boolean>
-  updateHeroTaglineAlignment: (alignment: string) => Promise<boolean>
   resetCompanyName: () => Promise<void>
   resetCompanyColor: () => Promise<void>
   resetCompanyLogo: () => Promise<void>
   resetMainHeadline: () => Promise<void>
   resetHeroBackgroundImage: () => Promise<void>
-  resetHeroTaglineAlignment: () => Promise<void>
   isLoaded: boolean
   // Additional admin settings
   settings: any
@@ -77,10 +74,6 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     return await adminSettings.updateSetting('heroBackgroundImage', image)
   }
 
-  const updateHeroTaglineAlignment = async (alignment: string) => {
-    return await adminSettings.updateSetting('heroTaglineAlignment', alignment)
-  }
-
   const resetCompanyName = async () => {
     await adminSettings.updateSetting('companyName', 'Honic')
   }
@@ -102,10 +95,6 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     await adminSettings.updateSetting('heroBackgroundImage', '')
   }
 
-  const resetHeroTaglineAlignment = async () => {
-    await adminSettings.updateSetting('heroTaglineAlignment', 'left')
-  }
-
   const companyContextValue = {
     companyName: adminSettings.companyName,
     companyColor: adminSettings.companyColor,
@@ -113,7 +102,6 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     companyTagline: adminSettings.companyTagline || "",
     mainHeadline: adminSettings.mainHeadline,
     heroBackgroundImage: adminSettings.heroBackgroundImage,
-    heroTaglineAlignment: adminSettings.heroTaglineAlignment,
     serviceRetailImages: adminSettings?.serviceRetailImages || [],
     servicePrototypingImages: adminSettings?.servicePrototypingImages || [],
     servicePcbImages: adminSettings?.servicePcbImages || [],
@@ -132,13 +120,11 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     updateCompanyLogo,
     updateMainHeadline,
     updateHeroBackgroundImage,
-    updateHeroTaglineAlignment,
     resetCompanyName,
     resetCompanyColor,
     resetCompanyLogo,
     resetMainHeadline,
     resetHeroBackgroundImage,
-    resetHeroTaglineAlignment,
     isLoaded: adminSettings.isLoaded,
     settings: adminSettings.settings,
     updateSetting: adminSettings.updateSetting,

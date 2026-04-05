@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useCompanyContext } from "@/components/company-provider"
 import { toast } from "@/hooks/use-toast"
 import { 
@@ -21,8 +20,7 @@ import {
   Globe,
   MapPin,
   Palette,
-  Type,
-  AlignLeft
+  Type
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import Image from "next/image"
@@ -35,7 +33,6 @@ interface SettingsData {
   companyLogo: string
   mainHeadline: string
   heroBackgroundImage: string
-  heroTaglineAlignment: string
   // Contact Information
   websiteUrl: string
   contactEmail: string
@@ -54,19 +51,16 @@ export default function SettingsPage() {
     companyLogo, 
     mainHeadline,
     heroBackgroundImage,
-    heroTaglineAlignment,
     updateCompanyName,
     updateCompanyColor, 
     updateCompanyLogo, 
     updateMainHeadline,
     updateHeroBackgroundImage,
-    updateHeroTaglineAlignment,
     resetCompanyName,
     resetCompanyColor, 
     resetCompanyLogo, 
     resetMainHeadline,
     resetHeroBackgroundImage,
-    resetHeroTaglineAlignment,
     isLoaded,
     settings: adminSettings,
     updateSettings
@@ -79,7 +73,6 @@ export default function SettingsPage() {
     companyLogo: companyLogo,
     mainHeadline: mainHeadline,
     heroBackgroundImage: heroBackgroundImage,
-    heroTaglineAlignment: adminSettings?.heroTaglineAlignment || 'left',
     websiteUrl: adminSettings?.websiteUrl || "",
     contactEmail: adminSettings?.contactEmail || "",
     contactPhone: adminSettings?.contactPhone || "",
@@ -210,7 +203,6 @@ export default function SettingsPage() {
         companyLogo: settings.companyLogo,
         mainHeadline: settings.mainHeadline,
         heroBackgroundImage: settings.heroBackgroundImage,
-        heroTaglineAlignment: settings.heroTaglineAlignment,
         websiteUrl: settings.websiteUrl,
         contactEmail: settings.contactEmail,
         contactPhone: settings.contactPhone,
@@ -489,34 +481,13 @@ export default function SettingsPage() {
                           </span>
                         </Label>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
+                          Files upload to the <span className="font-medium">hero-images</span> Storage bucket. Saving a new image updates settings and removes the previous file from that bucket when it was stored there.
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
                           Recommended: 1920x600px. PNG, JPG, GIF, WebP (max 10MB)
                         </p>
                       </div>
                     </div>
-                  </div>
-
-                  {/* Hero Tagline Alignment */}
-                  <div className="space-y-2">
-                    <Label htmlFor="hero-tagline-alignment" className="flex items-center gap-2 text-sm font-medium">
-                      <AlignLeft className="h-4 w-4" />
-                      Content Alignment
-                    </Label>
-                    <Select 
-                      value={settings.heroTaglineAlignment} 
-                      onValueChange={(value) => setSettings(prev => ({ ...prev, heroTaglineAlignment: value }))}
-                    >
-                      <SelectTrigger className="h-11">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="left">Left</SelectItem>
-                        <SelectItem value="center">Center</SelectItem>
-                        <SelectItem value="right">Right</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      How the hero section content should be aligned
-                    </p>
                   </div>
                 </div>
               </CardContent>
