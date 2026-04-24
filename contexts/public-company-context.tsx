@@ -8,7 +8,6 @@ interface PublicCompanyContextType {
   companyLogo: string
   mainHeadline: string
   heroBackgroundImage: string
-  heroTaglineAlignment: string
   serviceRetailImages: string[]
   servicePrototypingImages: string[]
   servicePcbImages: string[]
@@ -48,7 +47,6 @@ export function PublicCompanyProvider({ children }: { children: ReactNode }) {
     companyLogo: '/android-chrome-512x512.png',
     mainHeadline: 'Welcome to Our Store',
     heroBackgroundImage: '',
-    heroTaglineAlignment: 'center',
     serviceRetailImages: [],
     servicePrototypingImages: [],
     servicePcbImages: [],
