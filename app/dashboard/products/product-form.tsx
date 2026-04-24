@@ -410,52 +410,50 @@ export function ProductForm({ product, onClose, onSave, autoCloseOnSave = true, 
     }))
   }
 
-  // Delete variant image from both storage and database
+  // Delete variant image from both storage and database (uses /api/media/delete with type=variant)
   const deleteVariantImage = async (index: number) => {
     const variantImage = formData.variantImages[index]
     if (!variantImage || !product?.id) return
 
-    // Show confirmation dialog
+    const imageUrl = typeof variantImage === 'string' ? variantImage : variantImage.imageUrl
+    if (!imageUrl) return
+
     const confirmed = window.confirm(
       'Are you sure you want to delete this variant image? This action cannot be undone and will remove the image from both storage and the database.'
     )
-
     if (!confirmed) return
 
     try {
-      const response = await fetch('/api/variant-images/delete', {
+      const response = await fetch('/api/media/delete', {
         method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          productId: product?.id,
-          imageUrl: variantImage.imageUrl
+          productId: product.id,
+          type: 'variant',
+          context: 'variant',
+          url: imageUrl
         })
       })
 
       if (!response.ok) {
-        throw new Error('Failed to delete variant image')
+        const err = await response.json().catch(() => ({}))
+        throw new Error(err.error || 'Failed to delete variant image')
       }
 
-      const result = await response.json()
-      
-      // Remove from form data
       setFormData(prev => ({
         ...prev,
         variantImages: prev.variantImages.filter((_, i) => i !== index)
       }))
 
       toast({
-        title: "✅ Variant Image Deleted!",
-        description: `Variant image deleted successfully. ${result.remainingImages} images remaining.`,
+        title: "✅ Variant Image Deleted",
+        description: "Variant image removed from storage and product.",
         duration: 3000,
       })
-
     } catch (error) {
       toast({
         title: "❌ Delete Failed",
-        description: "Failed to delete variant image. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to delete variant image. Please try again.",
         variant: "destructive",
         duration: 3000,
       })
@@ -1579,17 +1577,29 @@ export function ProductForm({ product, onClose, onSave, autoCloseOnSave = true, 
             onChange={(url) => handleInputChange("image", url)}
             onRemove={async () => {
               try {
-                const currentUrl = formData.image || product?.image
+                const currentUrl = (formData.image || product?.image || '').trim()
                 if (currentUrl) {
-                  const fileName = (currentUrl.split('/').pop() || '').trim()
-                  if (fileName) {
-                  await fetch(`/api/media/delete?fileName=${encodeURIComponent(fileName)}&type=image&context=product${product?.id ? `&productId=${product.id}` : ''}`, {
-                      method: 'DELETE'
+                  const response = await fetch('/api/media/delete', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      productId: product?.id || undefined,
+                      type: 'image',
+                      context: 'product',
+                      url: currentUrl
                     })
+                  })
+                  if (!response.ok) {
+                    const err = await response.json().catch(() => ({}))
+                    throw new Error(err.error || 'Delete failed')
                   }
                 }
               } catch (e) {
-                // Ignore delete failures; user can re-upload
+                toast({
+                  title: "Delete failed",
+                  description: e instanceof Error ? e.message : "Could not remove image from storage.",
+                  variant: "destructive"
+                })
               } finally {
                 handleInputChange("image", "")
               }
