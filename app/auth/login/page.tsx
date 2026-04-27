@@ -19,7 +19,24 @@ function LoginPageContent() {
   const { signIn, isLoggingIn, user } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get('redirect') || '/products'
+  const [redirectTo, setRedirectTo] = useState('/products')
+
+  useEffect(() => {
+    const fromQuery = searchParams.get('redirect')
+    if (fromQuery) {
+      setRedirectTo(fromQuery)
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('post_login_redirect', fromQuery)
+      }
+      return
+    }
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('post_login_redirect')
+      if (saved) {
+        setRedirectTo(saved)
+      }
+    }
+  }, [searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -49,6 +66,9 @@ function LoginPageContent() {
 
     // Redirect immediately after successful login (no success card)
     const result = await signIn(sanitizedEmail, sanitizedPassword, remember, false, redirectTo)
+    if (result?.success && typeof window !== 'undefined') {
+      sessionStorage.removeItem('post_login_redirect')
+    }
     
     // Error handling is done by AuthContext - no need to log here
   }

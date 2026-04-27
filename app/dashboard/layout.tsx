@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import Image from "next/image"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import {
   LayoutDashboard,
   Package,
@@ -13,14 +13,18 @@ import {
   LogOut,
   Menu,
   X,
+  PanelLeft,
+  PanelLeftClose,
   Palette,
   DollarSign,
   Landmark,
   ShoppingCart,
   FileImage,
+  ReceiptText,
   Building2,
   Wallet,
   AlertTriangle,
+  BarChart3,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -36,6 +40,8 @@ import { AdminRoleGuard } from "@/components/admin-role-guard"
 import { Admin2FAGuard } from "@/components/admin-2fa-guard"
 import { AdminNotificationCenter } from "@/components/admin-notification-center"
 
+const NAV_EXPANDED_KEY = "admin-sidebar-expanded"
+
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Products", href: "/dashboard/products", icon: Package },
@@ -47,6 +53,8 @@ const navigation = [
   { name: "Payout Accounts", href: "/dashboard/payout-accounts", icon: Wallet },
   { name: "Categories", href: "/dashboard/categories", icon: Tags },
   { name: "Advertisements", href: "/dashboard/advertisements", icon: FileImage },
+  { name: "Invoices", href: "/dashboard/invoices", icon: ReceiptText },
+  { name: "Invoice Clients", href: "/dashboard/invoices/list", icon: ReceiptText },
   { name: "Users", href: "/dashboard/users", icon: Users },
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ]
@@ -56,7 +64,39 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const { signOut, user, loading, isAuthenticated, isAdmin } = useAuth()
   const { toast } = useToast()
   const router = useRouter()
+  const pathname = usePathname()
+  const buildLoginRedirect = () => {
+    const target = pathname || "/dashboard"
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.setItem("post_login_redirect", target)
+      } catch {
+        // ignore storage failures
+      }
+    }
+    return `/auth/login?redirect=${encodeURIComponent(target)}`
+  }
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  /** Desktop (lg+): when false, sidebar is off-canvas and main is full width */
+  const [navExpanded, setNavExpanded] = useState(true)
+
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem(NAV_EXPANDED_KEY)
+      if (v === "false") setNavExpanded(false)
+      if (v === "true") setNavExpanded(true)
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(NAV_EXPANDED_KEY, String(navExpanded))
+    } catch {
+      // ignore
+    }
+  }, [navExpanded])
   const { currency, setCurrency } = useCurrency() // Use global currency context
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const { companyName, companyLogo, isLoaded: companyLoaded } = useCompanyContext()
@@ -83,7 +123,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             description: "Please log in to access the admin panel",
             variant: "destructive"
           })
-          router.push('/auth/login?redirect=/dashboard')
+          router.push(buildLoginRedirect())
         }
         return
       }
@@ -124,7 +164,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         
         // If unauthorized, redirect to login
         if (pendingRes.status === 401) {
-          router.push('/auth/login?redirect=/dashboard')
+          router.push(buildLoginRedirect())
           return
         }
       }
@@ -142,7 +182,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         
         // If unauthorized, redirect to login
         if (confirmedRes.status === 401) {
-          router.push('/auth/login?redirect=/dashboard')
+          router.push(buildLoginRedirect())
           return
         }
       }
@@ -248,50 +288,86 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <AdminRoleGuard>
       <Admin2FAGuard>
-        <div className={cn("flex h-screen", themeClasses.mainBg)} suppressHydrationWarning>
-      {/* Sidebar */}
+        <div className={cn("flex h-screen w-full min-w-0", themeClasses.mainBg)} suppressHydrationWarning>
+      {/* Sidebar: mobile = drawer; desktop = fixed strip, optional collapse for full-width main */}
       <div
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-48 transform transition-transform duration-300 ease-in-out",
+          "fixed inset-y-0 left-0 z-50 w-48 max-w-[85vw] transform border-r transition-transform duration-300 ease-in-out",
           themeClasses.cardBg,
           themeClasses.cardBorder,
-          sidebarOpen ? "translate-x-0" : "-translate-x-full",
-          "lg:translate-x-0 lg:static lg:inset-0"
+          "-translate-x-full",
+          sidebarOpen && "max-lg:translate-x-0",
+          navExpanded && "lg:translate-x-0"
         )}
         suppressHydrationWarning
       >
         <div className="flex h-full flex-col" suppressHydrationWarning>
-          {/* Logo */}
-          <div className={cn("flex h-16 items-center justify-between px-4", themeClasses.cardBorder, "border-b")} suppressHydrationWarning>
-            <div className="flex items-center gap-2" suppressHydrationWarning>
-              <Link href="/dashboard" className={cn("flex items-center gap-2", themeClasses.mainText)}>
-                <Image
-                  src={displayLogo}
-                  alt={`${companyName} Logo`}
-                  width={48}
-                  height={48}
-                  className="rounded-md"
-                />
-                <span className="text-lg font-semibold">Admin Panel</span>
-              </Link>
-              <a 
-                href="https://honiccompanystore.com" 
-                target="_blank"
-                rel="noopener noreferrer"
-                className={cn("ml-2 text-sm text-blue-500 hover:text-blue-600 underline", themeClasses.mainText)}
-                title="Go to main site"
-              >
-                Home
-              </a>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setSidebarOpen(false)}
-              className="lg:hidden"
+          {/* Brand + Home + collapse (narrow sidebar: stack title / Home; avoid inline overlap) */}
+          <div
+            className={cn("border-b", themeClasses.cardBorder)}
+            suppressHydrationWarning
+          >
+            <div
+              className="flex items-start justify-between gap-2 px-3 py-2.5 sm:px-3.5"
+              suppressHydrationWarning
             >
-              <X className="w-5 h-5" />
-            </Button>
+              <div className="flex min-w-0 flex-1 items-start gap-2.5" suppressHydrationWarning>
+                <Link
+                  href="/dashboard"
+                  className="relative h-9 w-9 shrink-0 overflow-hidden rounded-md sm:h-10 sm:w-10"
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  <Image
+                    src={displayLogo}
+                    alt={`${companyName} logo`}
+                    width={40}
+                    height={40}
+                    className="h-9 w-9 object-contain sm:h-10 sm:w-10"
+                    sizes="40px"
+                  />
+                </Link>
+                <div className="min-w-0 flex-1">
+                  <Link
+                    href="/dashboard"
+                    className={cn("block text-sm font-semibold leading-tight", themeClasses.mainText, "line-clamp-2 hover:opacity-90")}
+                    onClick={() => setSidebarOpen(false)}
+                  >
+                    Admin Panel
+                  </Link>
+                  <a
+                    href="https://honiccompanystore.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-0.5 inline-block max-w-full truncate text-xs font-medium text-blue-600 underline-offset-2 hover:underline"
+                    title="Open storefront"
+                  >
+                    Home
+                  </a>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-0.5 self-start pt-0.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setNavExpanded(false)}
+                  className="hidden h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground lg:inline-flex"
+                  title="Collapse sidebar (full width content)"
+                  aria-label="Collapse sidebar"
+                >
+                  <PanelLeftClose className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setSidebarOpen(false)}
+                  className="h-8 w-8 shrink-0 lg:hidden"
+                  aria-label="Close menu"
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+            </div>
           </div>
 
           {/* Navigation */}
@@ -315,6 +391,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 <Link
                   key={item.name}
                   href={item.href}
+                  onClick={() => setSidebarOpen(false)}
                   className={cn(
                     "group flex items-center justify-between px-2 py-2 text-sm font-medium rounded-md",
                     themeClasses.mainText,
@@ -392,34 +469,107 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="flex flex-1 flex-col" suppressHydrationWarning>
-        {/* Top bar */}
-        <div className={cn("sticky top-0 z-40 flex h-16 items-center gap-x-4 border-b px-4", themeClasses.cardBg, themeClasses.cardBorder)} suppressHydrationWarning>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setSidebarOpen(true)}
-            className="lg:hidden w-8 h-8"
-          >
-            <Menu className="w-8 h-8" />
-          </Button>
-
-          <div className="flex flex-1 items-center gap-x-4 self-stretch lg:gap-x-6" suppressHydrationWarning>
-            <div className="flex flex-1" suppressHydrationWarning />
-            <div className="flex items-center gap-x-4 lg:gap-x-6" suppressHydrationWarning>
-              {/* Admin Notification Center */}
+      {/* Main content — pl matches fixed sidebar w-48 on desktop when expanded */}
+      <div
+        className={cn(
+          "flex min-w-0 flex-1 flex-col transition-[padding] duration-300 ease-in-out",
+          navExpanded && "lg:pl-48"
+        )}
+        suppressHydrationWarning
+      >
+        {/* Top bar: layout controls + Project Financial; utilities on the right */}
+        <header
+          className={cn(
+            "sticky top-0 z-40 w-full min-w-0 border-b shadow-sm",
+            themeClasses.cardBg,
+            themeClasses.cardBorder
+          )}
+          suppressHydrationWarning
+        >
+          <div className="mx-auto flex h-14 w-full min-w-0 max-w-full items-center justify-between gap-2 px-3 sm:h-16 sm:gap-3 sm:px-4">
+            <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSidebarOpen(true)}
+                className="h-9 w-9 shrink-0 lg:hidden"
+                aria-label="Open menu"
+              >
+                <Menu className="h-5 w-5" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setNavExpanded(true)}
+                className={cn("hidden h-9 w-9 shrink-0 lg:inline-flex", navExpanded && "lg:hidden")}
+                title="Show sidebar"
+                aria-label="Show sidebar"
+              >
+                <PanelLeft className="h-5 w-5" />
+              </Button>
+              <Link
+                href="/dashboard"
+                className={cn(
+                  "inline-flex h-9 max-w-full items-center gap-2 rounded-lg border px-2.5 text-xs font-semibold transition-colors sm:px-3 sm:text-sm",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 focus-visible:ring-offset-2",
+                  pathname === "/dashboard"
+                    ? "border-emerald-500/50 bg-emerald-500/[0.12] text-emerald-900 shadow-sm dark:border-emerald-500/40 dark:bg-emerald-500/20 dark:text-emerald-100"
+                    : cn(
+                        "text-foreground/90 border-transparent bg-muted/30 hover:bg-muted/50 hover:border-border/80",
+                        themeClasses.mainText
+                      )
+                )}
+              >
+                <LayoutDashboard
+                  className={cn(
+                    "h-4 w-4 shrink-0",
+                    pathname === "/dashboard"
+                      ? "text-emerald-700 dark:text-emerald-300"
+                      : "text-emerald-600/80 dark:text-emerald-400/90"
+                  )}
+                />
+                <span className="min-w-0 truncate sm:whitespace-nowrap">Store Financial</span>
+              </Link>
+              <Link
+                href="/PROJECTDASHBOARD"
+                className={cn(
+                  "inline-flex h-9 max-w-full items-center gap-2 rounded-lg border px-2.5 text-xs font-semibold transition-colors sm:px-3 sm:text-sm",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 focus-visible:ring-offset-2",
+                  pathname === "/PROJECTDASHBOARD" || pathname.startsWith("/PROJECTDASHBOARD/")
+                    ? "border-blue-500/50 bg-blue-500/[0.12] text-blue-800 shadow-sm dark:border-blue-500/40 dark:bg-blue-500/20 dark:text-blue-100"
+                    : cn(
+                        "text-foreground/90 border-transparent bg-muted/30 hover:bg-muted/50 hover:border-border/80",
+                        themeClasses.mainText
+                      )
+                )}
+              >
+                <BarChart3
+                  className={cn(
+                    "h-4 w-4 shrink-0",
+                    pathname === "/PROJECTDASHBOARD" || pathname.startsWith("/PROJECTDASHBOARD/")
+                      ? "text-blue-600 dark:text-blue-300"
+                      : "text-blue-600/80 dark:text-blue-400/90"
+                  )}
+                />
+                <span className="min-w-0 truncate sm:whitespace-nowrap">Project Financial</span>
+              </Link>
+            </div>
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2" suppressHydrationWarning>
               <AdminNotificationCenter />
-              
-              {/* Theme Switcher */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
                     size="sm"
-                    className={cn(themeClasses.mainText, themeClasses.buttonGhostHoverBg, "px-3 py-2")}
+                    className={cn(
+                      "h-9 gap-2 rounded-lg px-2.5 sm:px-3",
+                      themeClasses.mainText,
+                      themeClasses.buttonGhostHoverBg
+                    )}
                   >
-                    <span className="text-sm font-medium">Theme</span>
+                    <Palette className="h-4 w-4 opacity-80" />
+                    <span className="hidden text-sm font-medium sm:inline">Theme</span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className={cn(themeClasses.cardBg, themeClasses.cardBorder)}>
@@ -445,12 +595,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </DropdownMenu>
             </div>
           </div>
-        </div>
+        </header>
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto" suppressHydrationWarning>
-          <div className="pt-8 pb-6" suppressHydrationWarning>
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8" suppressHydrationWarning>
+          <div className="h-full w-full pt-6 pb-6 sm:pt-8" suppressHydrationWarning>
+            <div className="w-full max-w-full px-4 sm:px-6 lg:px-8" suppressHydrationWarning>
               {children}
             </div>
           </div>
@@ -460,8 +610,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black bg-opacity-50 lg:hidden"
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
           onClick={() => setSidebarOpen(false)}
+          aria-hidden
         />
       )}
         </div>

@@ -20,15 +20,40 @@ export function Admin2FAGuard({ children }: Admin2FAGuardProps) {
   const [verificationCode, setVerificationCode] = useState('')
   const [isVerifying, setIsVerifying] = useState(false)
   const [attempts, setAttempts] = useState(0)
+  const [is2FAVerified, setIs2FAVerified] = useState(false)
+  const [isReady, setIsReady] = useState(false)
 
-  // Check if 2FA is already verified (stored in sessionStorage)
+  const isDevMode = process.env.NODE_ENV === 'development'
+  const devCacheKey = 'admin-2fa-dev-verified'
+
+  // Check if 2FA is already verified.
+  // In dev mode, allow persistent cache so the prompt appears only once.
   useEffect(() => {
-    const is2FAVerified = sessionStorage.getItem('admin-2fa-verified')
-    if (is2FAVerified === 'true') {
-      // 2FA already verified in this session
+    const cachedDevVerified = isDevMode && localStorage.getItem(devCacheKey) === 'true'
+    if (cachedDevVerified) {
+      sessionStorage.setItem('admin-2fa-verified', 'true')
+      setIs2FAVerified(true)
+      setIsReady(true)
       return
     }
-  }, [])
+
+    const verified = sessionStorage.getItem('admin-2fa-verified') === 'true'
+    const verificationTime = sessionStorage.getItem('admin-2fa-time')
+
+    if (!isDevMode && verificationTime) {
+      // Keep current prod behavior: expire after 1 hour.
+      if (Date.now() - parseInt(verificationTime, 10) > 60 * 60 * 1000) {
+        sessionStorage.removeItem('admin-2fa-verified')
+        sessionStorage.removeItem('admin-2fa-time')
+        setIs2FAVerified(false)
+        setIsReady(true)
+        return
+      }
+    }
+
+    setIs2FAVerified(verified)
+    setIsReady(true)
+  }, [isDevMode])
 
   const handle2FAVerification = async () => {
     if (!verificationCode.trim()) {
@@ -51,6 +76,10 @@ export function Admin2FAGuard({ children }: Admin2FAGuardProps) {
         // Mark 2FA as verified for this session
         sessionStorage.setItem('admin-2fa-verified', 'true')
         sessionStorage.setItem('admin-2fa-time', Date.now().toString())
+        if (isDevMode) {
+          localStorage.setItem(devCacheKey, 'true')
+        }
+        setIs2FAVerified(true)
         
         toast({
           title: "Verification Successful",
@@ -91,14 +120,8 @@ export function Admin2FAGuard({ children }: Admin2FAGuardProps) {
     }
   }
 
-  // Check if 2FA is verified
-  const is2FAVerified = sessionStorage.getItem('admin-2fa-verified') === 'true'
-  const verificationTime = sessionStorage.getItem('admin-2fa-time')
-  
-  // Reset 2FA verification after 1 hour
-  if (verificationTime && Date.now() - parseInt(verificationTime) > 60 * 60 * 1000) {
-    sessionStorage.removeItem('admin-2fa-verified')
-    sessionStorage.removeItem('admin-2fa-time')
+  if (!isReady) {
+    return null
   }
 
   if (is2FAVerified) {
@@ -162,7 +185,11 @@ export function Admin2FAGuard({ children }: Admin2FAGuardProps) {
 
           <div className="flex items-center space-x-2 text-xs text-gray-500">
             <AlertCircle className="w-4 h-4" />
-            <span>Verification expires after 1 hour</span>
+            <span>
+              {isDevMode
+                ? 'Dev mode: verification is cached locally after first success'
+                : 'Verification expires after 1 hour'}
+            </span>
           </div>
         </CardContent>
       </Card>
