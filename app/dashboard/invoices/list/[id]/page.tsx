@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { useParams, useSearchParams } from "next/navigation"
+import { useParams, usePathname, useSearchParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -43,8 +43,13 @@ export default function SavedInvoiceDetailPage() {
   const { themeClasses } = useTheme()
   const { formatPrice } = useCurrency()
   const params = useParams<{ id: string }>()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
-  const tab = searchParams.get("tab") || "preview"
+  const router = useRouter()
+  const tab = searchParams.get("tab") || "payments"
+  const scope = pathname.startsWith("/PROJECTDASHBOARD") || searchParams.get("scope") === "project" ? "project" : "main"
+  const listBasePath = scope === "project" ? "/PROJECTDASHBOARD/invoices/list" : "/dashboard/invoices/list"
+  const studioBasePath = scope === "project" ? "/PROJECTDASHBOARD/invoice" : "/dashboard/invoices"
   const INVOICE_BLUE = "#184a96"
   const id = params.id
 
@@ -63,6 +68,18 @@ export default function SavedInvoiceDetailPage() {
   const [paymentDate, setPaymentDate] = useState("")
   const [paymentAmount, setPaymentAmount] = useState<number>(0)
   const [paymentEntryNote, setPaymentEntryNote] = useState("")
+
+  useEffect(() => {
+    if (!id) return
+    if (tab === "preview") {
+      router.replace(`${studioBasePath}?invoiceId=${id}&mode=preview`)
+      return
+    }
+    if (tab === "edit") {
+      router.replace(`${studioBasePath}?invoiceId=${id}&mode=edit`)
+      return
+    }
+  }, [id, tab, router, studioBasePath])
 
   useEffect(() => {
     let cancelled = false
@@ -207,62 +224,18 @@ export default function SavedInvoiceDetailPage() {
     <div className={cn("space-y-6", themeClasses.mainText)}>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Invoice Actions</h1>
-          <p className={cn("mt-1 text-sm", themeClasses.textNeutralSecondary)}>Preview, edit invoice, and record payments made/due.</p>
+          <h1 className="text-3xl font-bold tracking-tight">Payments</h1>
+          <p className={cn("mt-1 text-sm", themeClasses.textNeutralSecondary)}>Record payments made and track due balance.</p>
         </div>
         <Button asChild variant="outline">
-          <Link href="/dashboard/invoices/list">Back to list</Link>
-        </Button>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <Button asChild variant={tab === "preview" ? "default" : "outline"}>
-          <Link href={`/dashboard/invoices/list/${id}?tab=preview`}>Preview</Link>
-        </Button>
-        <Button asChild variant={tab === "edit" ? "default" : "outline"}>
-          <Link href={`/dashboard/invoices/list/${id}?tab=edit`}>Edit</Link>
-        </Button>
-        <Button asChild variant={tab === "payments" ? "default" : "outline"}>
-          <Link href={`/dashboard/invoices/list/${id}?tab=payments`}>Payments</Link>
+          <Link href={`${listBasePath}?scope=${scope}`}>Back to list</Link>
         </Button>
       </div>
 
       {loading ? <p className={cn("text-sm", themeClasses.textNeutralSecondary)}>Loading...</p> : null}
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
-      {!loading && invoice && tab === "preview" ? (
-        <Card className={cn(themeClasses.cardBg, themeClasses.cardBorder)}>
-          <CardHeader>
-            <CardTitle>Preview (Full Invoice)</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <p className={cn("text-xs", themeClasses.textNeutralSecondary)}>
-              Opens full invoice view with all sections exactly as written.
-            </p>
-            <Button asChild>
-              <Link href={`/dashboard/invoices?invoiceId=${id}&mode=preview`}>Open Full Invoice Preview</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {!loading && invoice && tab === "edit" ? (
-        <Card className={cn(themeClasses.cardBg, themeClasses.cardBorder)}>
-          <CardHeader>
-            <CardTitle>Edit Invoice (Full Editor)</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className={cn("text-xs", themeClasses.textNeutralSecondary)}>
-              Returns to Invoice Studio so you can edit the complete invoice form and tables.
-            </p>
-            <Button asChild>
-              <Link href={`/dashboard/invoices?invoiceId=${id}&mode=edit`}>Open Invoice Editor</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {!loading && invoice && tab === "payments" ? (
+      {!loading && invoice ? (
         <Card className={cn("mx-auto w-full max-w-4xl", themeClasses.cardBg, themeClasses.cardBorder)}>
           <CardHeader>
             <CardTitle className="text-slate-900">Payments</CardTitle>

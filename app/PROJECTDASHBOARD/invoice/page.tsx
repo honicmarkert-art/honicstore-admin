@@ -5,6 +5,8 @@ import AdminInvoicesPage from "@/app/dashboard/invoices/page"
 export default function ProjectDashboardInvoicePage() {
   return (
     <AdminInvoicesPage
+      dashboardScope="project"
+      savedListHref="/PROJECTDASHBOARD/invoices/list"
       initialValues={{
         fromName: "Honic Company Limited",
         companyTagline: "INOVATIONS AND RESEARCH",

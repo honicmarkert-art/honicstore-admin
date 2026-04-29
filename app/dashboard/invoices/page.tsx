@@ -203,9 +203,13 @@ function escapeHtml(s: string): string {
 export default function AdminInvoicesPage({
   initialValues,
   extraTables,
+  dashboardScope = "main",
+  savedListHref = "/dashboard/invoices/list",
 }: {
   initialValues?: InvoiceInitialValues
   extraTables?: InvoiceExtraTables
+  dashboardScope?: "main" | "project"
+  savedListHref?: string
 }) {
   const { themeClasses } = useTheme()
   const { toast } = useToast()
@@ -1048,6 +1052,7 @@ export default function AdminInvoicesPage({
 
     const payload = {
       invoiceNumber,
+      dashboardScope,
       issueDate,
       dueDate,
       currency,
@@ -1091,9 +1096,12 @@ export default function AdminInvoicesPage({
       if (!res.ok) {
         throw new Error(data?.error || data?.details || "Failed to save invoice")
       }
+      if (data?.invoice?.invoice_number) {
+        setInvoiceNumber(String(data.invoice.invoice_number))
+      }
       toast({
         title: "Invoice saved",
-        description: `${invoiceNumber} saved for ${billToName.trim()}.`,
+        description: `${String(data?.invoice?.invoice_number || invoiceNumber)} saved for ${billToName.trim()}.`,
       })
     } catch (error) {
       toast({
@@ -1130,7 +1138,7 @@ export default function AdminInvoicesPage({
             </Button>
           ) : null}
           <Button variant="outline" asChild>
-            <Link href="/dashboard/invoices/list">View Saved Invoices</Link>
+            <Link href={savedListHref}>View Saved Invoices</Link>
           </Button>
           {!isPreviewOnly ? (
             <Button variant="outline" onClick={saveInvoiceToDatabase} className="gap-2" disabled={isSavingInvoice}>

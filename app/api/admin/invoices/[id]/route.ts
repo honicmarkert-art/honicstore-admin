@@ -113,3 +113,20 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   }
 }
 
+export async function DELETE(_: NextRequest, context: { params: Promise<{ id: string }> }) {
+  try {
+    const { error: authError } = await validateAdminAccess()
+    if (authError) return authError
+    const { id } = await context.params
+    const { client: supabase, error: envError } = getAdminClient()
+    if (envError) return NextResponse.json({ error: envError }, { status: 500 })
+
+    const { error } = await supabase.from(INVOICES_TABLE).delete().eq("id", id)
+    if (error) return NextResponse.json({ error: "Failed to delete invoice", details: error.message }, { status: 500 })
+
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    return NextResponse.json({ error: "Internal server error", details: error?.message || "Unknown error" }, { status: 500 })
+  }
+}
+

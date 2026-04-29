@@ -1,10 +1,10 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { LayoutDashboard, ReceiptText, ArrowLeft, PanelLeftClose, PanelLeftOpen } from "lucide-react"
+import { LayoutDashboard, ReceiptText, ArrowLeft, ListOrdered } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useTheme } from "@/hooks/use-theme"
 import { Button } from "@/components/ui/button"
@@ -17,6 +17,7 @@ type ProjectDashboardLayoutProps = {
 const projectNav = [
   { name: "Overview", href: "/PROJECTDASHBOARD", icon: LayoutDashboard },
   { name: "Invoice", href: "/PROJECTDASHBOARD/invoice", icon: ReceiptText },
+  { name: "Invoice List", href: "/PROJECTDASHBOARD/invoices/list", icon: ListOrdered },
 ]
 
 export default function ProjectDashboardLayout({ children }: ProjectDashboardLayoutProps) {
@@ -25,7 +26,14 @@ export default function ProjectDashboardLayout({ children }: ProjectDashboardLay
   const { themeClasses } = useTheme()
   const { loading, isAuthenticated, isAdmin } = useAuth()
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`)
-  const [navExpanded, setNavExpanded] = useState(true)
+  const navExpanded = true
+  const handleBack = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back()
+      return
+    }
+    router.push("/PROJECTDASHBOARD")
+  }
 
   useEffect(() => {
     if (loading) return
@@ -49,108 +57,67 @@ export default function ProjectDashboardLayout({ children }: ProjectDashboardLay
 
   return (
     <div className={cn("min-h-screen", themeClasses.mainBg)}>
-      <div className={cn("grid min-h-screen grid-cols-1", navExpanded ? "md:grid-cols-[240px_1fr]" : "md:grid-cols-[1fr]")}>
-        {navExpanded ? (
-          <aside className={cn("border-r p-4", themeClasses.cardBg, themeClasses.cardBorder)}>
-            <div className="mb-6 flex items-start justify-between gap-2">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-600 dark:text-blue-300">Standalone</p>
-                <h2 className="mt-1 text-lg font-bold">Project Dashboard</h2>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0"
-                onClick={() => setNavExpanded(false)}
-                aria-label="Collapse project sidebar"
-              >
-                <PanelLeftClose className="h-4 w-4" />
-              </Button>
-            </div>
+      <div className={cn("grid min-h-screen grid-cols-1 md:grid-cols-[260px_1fr]")}>
+        <aside className={cn("border-r p-4 md:p-5", themeClasses.cardBg, themeClasses.cardBorder)}>
+          <div className="mb-4">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full justify-start gap-2 rounded-2xl"
+              onClick={handleBack}
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </Button>
+          </div>
 
-            <nav className="space-y-1.5">
-              {projectNav.map((item) => {
-                const Icon = item.icon
-                const active = isActive(item.href)
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
+          <div className="mb-6 rounded-2xl border bg-muted/30 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-600 dark:text-blue-300">Project</p>
+            <h2 className="mt-1 text-lg font-bold">Financial Workspace</h2>
+            <p className="mt-1 text-xs text-muted-foreground">Sidebar navigation only</p>
+          </div>
+
+          <nav className="space-y-2">
+            {projectNav.map((item) => {
+              const Icon = item.icon
+              const active = isActive(item.href)
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "group flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold transition-all",
+                    active
+                      ? "bg-blue-600 text-white shadow-sm hover:bg-blue-600/90"
+                      : "border border-transparent bg-muted/25 text-muted-foreground hover:border-border/80 hover:bg-muted/45"
+                  )}
+                >
+                  <span
                     className={cn(
-                      "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors",
-                      active
-                        ? "border-blue-500/50 bg-blue-500/[0.12] text-blue-800 dark:border-blue-500/40 dark:bg-blue-500/20 dark:text-blue-100"
-                        : cn("border-transparent bg-muted/30 hover:border-border/80 hover:bg-muted/50", themeClasses.mainText)
+                      "inline-flex h-10 w-10 items-center justify-center rounded-2xl transition-colors",
+                      active ? "bg-white/15" : "bg-muted/40 group-hover:bg-muted/55"
                     )}
                   >
-                    <Icon className="h-4 w-4" />
-                    <span>{item.name}</span>
-                  </Link>
-                )
-              })}
-            </nav>
-
-            <div className="mt-6 border-t pt-4">
-              <Button asChild variant="outline" className="w-full justify-start gap-2">
-                <Link href="/dashboard">
-                  <ArrowLeft className="h-4 w-4" />
-                  Back to Admin Dashboard
+                    <Icon className={cn("h-5 w-5", active ? "text-white" : "text-muted-foreground")} />
+                  </span>
+                  <span className="truncate">{item.name}</span>
+                  {active ? <span className="ml-auto h-2 w-2 rounded-full bg-white/90" aria-hidden /> : null}
                 </Link>
-              </Button>
-            </div>
-          </aside>
-        ) : null}
+              )
+            })}
+          </nav>
+
+          <div className="mt-6 border-t pt-4">
+            <Button asChild variant="outline" className="w-full justify-start gap-2 rounded-2xl">
+              <Link href="/dashboard">
+                <ArrowLeft className="h-4 w-4" />
+                Back to Admin Dashboard
+              </Link>
+            </Button>
+          </div>
+        </aside>
 
         <main className="min-w-0">
-          <header className={cn("border-b px-4 py-3 md:px-6", themeClasses.cardBg, themeClasses.cardBorder)}>
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {!navExpanded ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-2"
-                      onClick={() => setNavExpanded(true)}
-                    >
-                      <PanelLeftOpen className="h-4 w-4" />
-                      Menu
-                    </Button>
-                  ) : null}
-                  <p className="text-sm font-semibold">Project Financial Workspace</p>
-                </div>
-                <Button asChild size="sm" variant="outline" className="gap-2">
-                  <Link href="/dashboard">
-                    <ArrowLeft className="h-4 w-4" />
-                    Return to Store Dashboard
-                  </Link>
-                </Button>
-              </div>
-              <nav className="flex flex-wrap items-center gap-2">
-                {projectNav.map((item) => {
-                  const Icon = item.icon
-                  const active = isActive(item.href)
-                  return (
-                    <Link
-                      key={`top-${item.href}`}
-                      href={item.href}
-                      className={cn(
-                        "inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors",
-                        active
-                          ? "border-blue-500/50 bg-blue-500/[0.12] text-blue-800 dark:border-blue-500/40 dark:bg-blue-500/20 dark:text-blue-100"
-                          : cn("border-transparent bg-muted/30 hover:border-border/80 hover:bg-muted/50", themeClasses.mainText)
-                      )}
-                    >
-                      <Icon className="h-3.5 w-3.5" />
-                      <span>{item.name}</span>
-                    </Link>
-                  )
-                })}
-              </nav>
-            </div>
-          </header>
           <section className="p-4 md:p-6">{children}</section>
         </main>
       </div>

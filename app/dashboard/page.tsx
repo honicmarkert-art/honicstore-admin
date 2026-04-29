@@ -81,7 +81,7 @@ export default function AdminDashboard() {
           fetch(`/api/admin/orders?t=${ts}`, { cache: "no-store", credentials: "include" }),
           fetch(`/api/admin/confirmed-orders?t=${ts}`, { cache: "no-store", credentials: "include" }),
           fetch(`/api/admin/users?t=${ts}`, { cache: "no-store", credentials: "include" }),
-          fetch(`/api/admin/invoices?t=${ts}&summaryOnly=true`, { cache: "no-store", credentials: "include" }),
+          fetch(`/api/admin/invoices?t=${ts}&summaryOnly=true&scope=main`, { cache: "no-store", credentials: "include" }),
         ])
         if (cancelled) return
         if (!oRes.ok || !cRes.ok || !uRes.ok || !iRes.ok) {

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -38,13 +39,24 @@ function fmtDate(v: string | null): string {
   return d.toLocaleDateString("en-GB")
 }
 
-export default function InvoiceClientsListPage() {
+export default function InvoiceClientsListPage({
+  dashboardScope = "main",
+  studioBasePath = "/dashboard/invoices",
+  listBasePath = "/dashboard/invoices/list",
+}: {
+  dashboardScope?: "main" | "project"
+  studioBasePath?: string
+  listBasePath?: string
+}) {
   const { themeClasses } = useTheme()
   const { formatPrice } = useCurrency()
+  const sp = useSearchParams()
   const [query, setQuery] = useState("")
   const [invoices, setInvoices] = useState<SavedInvoice[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [reloadTick, setReloadTick] = useState(0)
   const [summary, setSummary] = useState<{ totalCount: number; totalAmount: number; totalPaid: number; totalDue: number }>({
     totalCount: 0,
     totalAmount: 0,
@@ -58,7 +70,10 @@ export default function InvoiceClientsListPage() {
       setLoading(true)
       setError(null)
       try {
-        const qs = query.trim() ? `?clientName=${encodeURIComponent(query.trim())}&limit=200` : "?limit=200"
+        const sourceScope = dashboardScope === "project" ? "project" : "main"
+        const qs = query.trim()
+          ? `?clientName=${encodeURIComponent(query.trim())}&limit=200&scope=${sourceScope}`
+          : `?limit=200&scope=${sourceScope}`
         const res = await fetch(`/api/admin/invoices${qs}`, {
           cache: "no-store",
           credentials: "include",
@@ -85,7 +100,29 @@ export default function InvoiceClientsListPage() {
       ctrl.abort()
       window.clearTimeout(t)
     }
-  }, [query])
+  }, [query, reloadTick, dashboardScope, sp])
+
+  const deleteInvoice = async (invoiceId: string, invoiceNumber: string) => {
+    const ok = window.confirm(`Delete invoice ${invoiceNumber || invoiceId}? This cannot be undone.`)
+    if (!ok) return
+    setDeletingId(invoiceId)
+    setError(null)
+    try {
+      const res = await fetch(`/api/admin/invoices/${invoiceId}`, {
+        method: "DELETE",
+        credentials: "include",
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || "Failed to delete invoice")
+      }
+      setReloadTick((n) => n + 1)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete invoice.")
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   const clientCount = useMemo(() => new Set(invoices.map((i) => i.client_name)).size, [invoices])
 
@@ -99,7 +136,7 @@ export default function InvoiceClientsListPage() {
           </p>
         </div>
         <Button asChild variant="outline">
-          <Link href="/dashboard/invoices">Back to Invoice Studio</Link>
+          <Link href={studioBasePath}>Back to Invoice Studio</Link>
         </Button>
       </div>
 
@@ -183,13 +220,21 @@ export default function InvoiceClientsListPage() {
                       <td className="px-3 py-2 text-right">
                         <div className="flex justify-end gap-1">
                           <Button asChild size="sm" variant="outline">
-                            <Link href={`/dashboard/invoices?invoiceId=${inv.id}&mode=preview`}>Preview</Link>
+                            <Link href={`${studioBasePath}?invoiceId=${inv.id}&mode=preview`}>Preview</Link>
                           </Button>
                           <Button asChild size="sm" variant="outline">
-                            <Link href={`/dashboard/invoices?invoiceId=${inv.id}&mode=edit`}>Edit</Link>
+                            <Link href={`${studioBasePath}?invoiceId=${inv.id}&mode=edit`}>Edit</Link>
                           </Button>
                           <Button asChild size="sm">
-                            <Link href={`/dashboard/invoices/list/${inv.id}?tab=payments`}>Payments</Link>
+                            <Link href={`${listBasePath}/${inv.id}?scope=${dashboardScope}`}>Payments</Link>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            disabled={deletingId === inv.id}
+                            onClick={() => deleteInvoice(inv.id, inv.invoice_number)}
+                          >
+                            {deletingId === inv.id ? "Deleting..." : "Delete"}
                           </Button>
                         </div>
                       </td>

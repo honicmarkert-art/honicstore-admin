@@ -7,7 +7,8 @@ export const runtime = "nodejs"
 const INVOICES_TABLE = "invoices"
 
 const saveInvoiceSchema = z.object({
-  invoiceNumber: z.string().min(1),
+  invoiceNumber: z.string().optional().default(""),
+  dashboardScope: z.enum(["main", "project"]).optional().default("main"),
   clientName: z.string().min(1),
   issueDate: z.string().optional().default(""),
   dueDate: z.string().optional().default(""),
@@ -20,6 +21,27 @@ const saveInvoiceSchema = z.object({
     })
     .default({ subtotal: 0, taxAmount: 0, grandTotal: 0 }),
 })
+
+async function generateNextInvoiceNumber(supabase: any): Promise<string> {
+  const { data, error } = await supabase
+    .from(INVOICES_TABLE)
+    .select("invoice_number")
+    .order("created_at", { ascending: false })
+    .limit(2000)
+  if (error) throw new Error(error.message)
+
+  const year = new Date().getFullYear()
+  const pattern = new RegExp(`^INV-${year}-HCIR-(\\d+)$`)
+
+  const maxNum = (data || []).reduce((max: number, row: any) => {
+    const raw = String(row?.invoice_number || "").trim()
+    const m = raw.match(pattern)
+    const n = m ? Number(m[1]) : Number.NaN
+    return Number.isFinite(n) ? Math.max(max, n) : max
+  }, 0)
+  const next = String(maxNum + 1).padStart(4, "0")
+  return `INV-${year}-HCIR-${next}`
+}
 
 function getAdminClient() {
   try {
@@ -50,29 +72,37 @@ export async function POST(request: NextRequest) {
     const invoice = parsed.data
     const clientName = invoice.clientName.trim()
 
-    const now = new Date().toISOString()
-    const record = {
-      invoice_number: invoice.invoiceNumber,
-      client_name: clientName,
-      issue_date: invoice.issueDate || null,
-      due_date: invoice.dueDate || null,
-      currency: invoice.currency || "TZS",
-      subtotal: invoice.totals.subtotal,
-      tax_amount: invoice.totals.taxAmount,
-      grand_total: invoice.totals.grandTotal,
-      created_by: user?.id || null,
-      payload: body,
-      created_at: now,
-      updated_at: now,
+    let insertResult: any = null
+    let lastError: any = null
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const now = new Date().toISOString()
+      const generatedInvoiceNumber = await generateNextInvoiceNumber(supabase)
+      const record = {
+        invoice_number: generatedInvoiceNumber,
+        client_name: clientName,
+        issue_date: invoice.issueDate || null,
+        due_date: invoice.dueDate || null,
+        currency: invoice.currency || "TZS",
+        subtotal: invoice.totals.subtotal,
+        tax_amount: invoice.totals.taxAmount,
+        grand_total: invoice.totals.grandTotal,
+        created_by: user?.id || null,
+        payload: { ...body, dashboardScope: invoice.dashboardScope, invoiceNumber: generatedInvoiceNumber },
+        created_at: now,
+        updated_at: now,
+      }
+      insertResult = await supabase.from(INVOICES_TABLE).insert(record).select().single()
+      if (!insertResult.error) break
+      lastError = insertResult.error
+      // Retry only on duplicate invoice number race.
+      if (String(insertResult.error?.code || "") !== "23505") break
     }
-
-    const insertResult = await supabase.from(INVOICES_TABLE).insert(record).select().single()
 
     if (insertResult.error) {
       return NextResponse.json(
         {
           error: "Failed to save invoice",
-          details: insertResult.error.message,
+          details: insertResult.error.message || lastError?.message,
           hint: `Ensure table '${INVOICES_TABLE}' exists and matches the migration schema.`,
         },
         { status: 500 }
@@ -99,6 +129,7 @@ export async function GET(request: NextRequest) {
     }
 
     const q = String(request.nextUrl.searchParams.get("clientName") || "").trim()
+    const scope = request.nextUrl.searchParams.get("scope") === "project" ? "project" : "main"
     const summaryOnly = request.nextUrl.searchParams.get("summaryOnly") === "true"
     const limit = Math.min(100, Math.max(1, Number(request.nextUrl.searchParams.get("limit") || 50)))
 
@@ -112,6 +143,11 @@ export async function GET(request: NextRequest) {
 
       if (q) {
         query = query.ilike("client_name", `%${q}%`)
+      }
+      if (scope === "project") {
+        query = query.or("payload->>dashboardScope.eq.project,payload->>dashboardScope.is.null")
+      } else if (scope === "main") {
+        query = query.or("payload->>dashboardScope.eq.main,payload->>dashboardScope.is.null")
       }
 
       const result = await query
@@ -129,8 +165,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Summary for dashboard cards and list header
-    let summaryQuery = supabase.from(INVOICES_TABLE).select("grand_total", { count: "exact" })
+    let summaryQuery = supabase.from(INVOICES_TABLE).select("grand_total,payload", { count: "exact" })
     if (q) summaryQuery = summaryQuery.ilike("client_name", `%${q}%`)
+    if (scope === "project") {
+      summaryQuery = summaryQuery.or("payload->>dashboardScope.eq.project,payload->>dashboardScope.is.null")
+    } else if (scope === "main") {
+      summaryQuery = summaryQuery.or("payload->>dashboardScope.eq.main,payload->>dashboardScope.is.null")
+    }
     const summaryResult = await summaryQuery
     const summaryRows = summaryResult.data || []
     const totalAmount = summaryRows.reduce((sum, row) => sum + Number(row.grand_total || 0), 0)
