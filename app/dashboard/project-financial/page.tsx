@@ -83,7 +83,7 @@ export default function ProjectFinancialPage() {
         </CardHeader>
         <CardContent>
           <Button asChild className="bg-[#1e5bb8] text-white hover:bg-[#1a4fa3] hover:text-white">
-            <Link href="/PROJECTDASHBOARD/invoice">Open Invoice</Link>
+            <Link href="/projectdashboard/invoice">Open Invoice</Link>
           </Button>
         </CardContent>
       </Card>

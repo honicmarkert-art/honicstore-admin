@@ -47,9 +47,13 @@ export default function SavedInvoiceDetailPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const tab = searchParams.get("tab") || "payments"
-  const scope = pathname.startsWith("/PROJECTDASHBOARD") || searchParams.get("scope") === "project" ? "project" : "main"
-  const listBasePath = scope === "project" ? "/PROJECTDASHBOARD/invoices/list" : "/dashboard/invoices/list"
-  const studioBasePath = scope === "project" ? "/PROJECTDASHBOARD/invoice" : "/dashboard/invoices"
+  const scope =
+    pathname.startsWith("/projectdashboard") ||
+    searchParams.get("scope") === "project"
+      ? "project"
+      : "main"
+  const listBasePath = scope === "project" ? "/projectdashboard/invoices/list" : "/dashboard/invoices/list"
+  const studioBasePath = scope === "project" ? "/projectdashboard/invoice" : "/dashboard/invoices"
   const INVOICE_BLUE = "#184a96"
   const id = params.id
 

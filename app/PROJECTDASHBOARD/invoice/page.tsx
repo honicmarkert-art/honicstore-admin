@@ -6,11 +6,11 @@ export default function ProjectDashboardInvoicePage() {
   return (
     <AdminInvoicesPage
       dashboardScope="project"
-      savedListHref="/PROJECTDASHBOARD/invoices/list"
+      savedListHref="/projectdashboard/invoices/list"
       initialValues={{
         fromName: "Honic Company Limited",
         companyTagline: "INOVATIONS AND RESEARCH",
-        companyWebsite: "inr.honiccompany.com",
+        companyWebsite: "inova.honiccompany.com",
       }}
       extraTables={{
         sections: [
@@ -23,9 +23,7 @@ export default function ProjectDashboardInvoicePage() {
               { key: "unitPrice", label: "Unit price", align: "right" },
               { key: "totalPrice", label: "Total price", align: "right" },
             ],
-            rows: [
-              { sn: "1", item: "e.g. Arduino / Sensor / Pump", qty: "e.g. 1", unitPrice: "e.g. 25,000", totalPrice: "e.g. 25,000" },
-            ],
+            rows: [{ sn: "1", item: "e.g. Arduino / Sensor / Pump", qty: "e.g. 1", unitPrice: "e.g. 25,000", totalPrice: "e.g. 25,000" }],
           },
           {
             title: "Prototype Items",
@@ -36,9 +34,7 @@ export default function ProjectDashboardInvoicePage() {
               { key: "unitPrice", label: "Unit price", align: "right" },
               { key: "totalPrice", label: "Total price", align: "right" },
             ],
-            rows: [
-              { sn: "1", item: "e.g. Circuit casing / Water tank", qty: "e.g. 1", unitPrice: "e.g. 15,000", totalPrice: "e.g. 15,000" },
-            ],
+            rows: [{ sn: "1", item: "e.g. Circuit casing / Water tank", qty: "e.g. 1", unitPrice: "e.g. 15,000", totalPrice: "e.g. 15,000" }],
           },
           {
             title: "Service Cost",
@@ -49,15 +45,7 @@ export default function ProjectDashboardInvoicePage() {
               { key: "unitPrice", label: "Unit price", align: "right" },
               { key: "amount", label: "Total", align: "right" },
             ],
-            rows: [
-              {
-                sn: "1",
-                item: "e.g. Installation / Testing",
-                qty: "e.g. 1",
-                unitPrice: "e.g. 120,000",
-                amount: "e.g. 120,000",
-              },
-            ],
+            rows: [{ sn: "1", item: "e.g. Installation / Testing", qty: "e.g. 1", unitPrice: "e.g. 120,000", amount: "e.g. 120,000" }],
           },
         ],
         paymentSchedule: [
@@ -69,7 +57,7 @@ export default function ProjectDashboardInvoicePage() {
         paymentGrandTotal: "",
         paymentDeadline: "160 Days",
         note:
-          "NOTE:\n- This project cost includes implementation, simulation, block diagram development, and data analysis.\n- Component specifications may be adjusted based on final requirements.\n- Final amount may change due to design revisions or additional scope.\n- This document is a proforma estimate and not a tax invoice.",
+          "**1.** The above costs do not include expenses related to project documentation, including circuit simulation, block diagram development, or data analysis. Only component specifications are provided.\n\n**2.** The final cost may vary depending on design changes or additional requirements, which may result in an increase or decrease in price.\n\n**3.** This document can be used as proforma invoice or a tax invoice.\n\n**4.** The circuit casing highlighted in red indicates that its cost is not yet known. The cost will only be determined after the circuit casing has been drawn; once the price is confirmed, you will be notified.",
       }}
     />
   )

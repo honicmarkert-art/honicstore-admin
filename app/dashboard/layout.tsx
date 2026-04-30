@@ -532,11 +532,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 <span className="min-w-0 truncate sm:whitespace-nowrap">Store Financial</span>
               </Link>
               <Link
-                href="/PROJECTDASHBOARD"
+                href="/projectdashboard"
                 className={cn(
                   "inline-flex h-9 max-w-full items-center gap-2 rounded-lg border px-2.5 text-xs font-semibold transition-colors sm:px-3 sm:text-sm",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 focus-visible:ring-offset-2",
-                  pathname === "/PROJECTDASHBOARD" || pathname.startsWith("/PROJECTDASHBOARD/")
+                  pathname === "/projectdashboard" || pathname.startsWith("/projectdashboard/")
                     ? "border-blue-500/50 bg-blue-500/[0.12] text-blue-800 shadow-sm dark:border-blue-500/40 dark:bg-blue-500/20 dark:text-blue-100"
                     : cn(
                         "text-foreground/90 border-transparent bg-muted/30 hover:bg-muted/50 hover:border-border/80",
@@ -547,7 +547,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 <BarChart3
                   className={cn(
                     "h-4 w-4 shrink-0",
-                    pathname === "/PROJECTDASHBOARD" || pathname.startsWith("/PROJECTDASHBOARD/")
+                    pathname === "/projectdashboard" || pathname.startsWith("/projectdashboard/")
                       ? "text-blue-600 dark:text-blue-300"
                       : "text-blue-600/80 dark:text-blue-400/90"
                   )}

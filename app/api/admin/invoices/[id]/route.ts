@@ -20,6 +20,7 @@ const patchSchema = z.object({
       note: z.string().optional(),
     })
     .optional(),
+  hiddenFromList: z.boolean().optional(),
 })
 
 function getAdminClient() {
@@ -93,6 +94,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         records,
         note: patch.paymentNote ?? payments.note ?? "",
       },
+      ...(patch.hiddenFromList !== undefined ? { hiddenFromList: patch.hiddenFromList } : {}),
     }
 
     const update: Record<string, any> = {

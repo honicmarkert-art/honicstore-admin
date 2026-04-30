@@ -45,6 +45,7 @@ async function fetchInvoicesForScope(supabase: any, scope: "project" | "main" | 
     .select("id, invoice_number, client_name, grand_total, created_at, payload")
     .order("created_at", { ascending: false })
     .limit(500)
+    .or("payload->>hiddenFromList.is.null,payload->>hiddenFromList.eq.false")
 
   if (scope === "project") {
     query = query.or("payload->>dashboardScope.eq.project,payload->>dashboardScope.is.null")

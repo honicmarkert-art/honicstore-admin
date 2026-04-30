@@ -56,6 +56,7 @@ export default function InvoiceClientsListPage({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [hidingId, setHidingId] = useState<string | null>(null)
   const [reloadTick, setReloadTick] = useState(0)
   const [summary, setSummary] = useState<{ totalCount: number; totalAmount: number; totalPaid: number; totalDue: number }>({
     totalCount: 0,
@@ -121,6 +122,29 @@ export default function InvoiceClientsListPage({
       setError(e instanceof Error ? e.message : "Failed to delete invoice.")
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const hideInvoiceFromList = async (invoiceId: string, checked: boolean) => {
+    if (!checked) return
+    setHidingId(invoiceId)
+    setError(null)
+    try {
+      const res = await fetch(`/api/admin/invoices/${invoiceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ hiddenFromList: true }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || "Failed to hide invoice")
+      }
+      setReloadTick((n) => n + 1)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to hide invoice.")
+    } finally {
+      setHidingId(null)
     }
   }
 
@@ -218,7 +242,15 @@ export default function InvoiceClientsListPage({
                       <td className="px-3 py-2 text-right">{formatPrice(Number(inv.grand_total || 0))}</td>
                       <td className="px-3 py-2">{fmtDate(inv.created_at)}</td>
                       <td className="px-3 py-2 text-right">
-                        <div className="flex justify-end gap-1">
+                        <div className="flex items-center justify-end gap-2">
+                          <label className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                            <input
+                              type="checkbox"
+                              disabled={hidingId === inv.id}
+                              onChange={(e) => hideInvoiceFromList(inv.id, e.target.checked)}
+                            />
+                            {hidingId === inv.id ? "Hiding..." : "Hide"}
+                          </label>
                           <Button asChild size="sm" variant="outline">
                             <Link href={`${studioBasePath}?invoiceId=${inv.id}&mode=preview`}>Preview</Link>
                           </Button>

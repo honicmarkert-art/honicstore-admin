@@ -140,6 +140,7 @@ export async function GET(request: NextRequest) {
         .select("id, invoice_number, client_name, issue_date, due_date, currency, grand_total, created_at")
         .order("created_at", { ascending: false })
         .limit(limit)
+        .or("payload->>hiddenFromList.is.null,payload->>hiddenFromList.eq.false")
 
       if (q) {
         query = query.ilike("client_name", `%${q}%`)
@@ -166,6 +167,7 @@ export async function GET(request: NextRequest) {
 
     // Summary for dashboard cards and list header
     let summaryQuery = supabase.from(INVOICES_TABLE).select("grand_total,payload", { count: "exact" })
+    summaryQuery = summaryQuery.or("payload->>hiddenFromList.is.null,payload->>hiddenFromList.eq.false")
     if (q) summaryQuery = summaryQuery.ilike("client_name", `%${q}%`)
     if (scope === "project") {
       summaryQuery = summaryQuery.or("payload->>dashboardScope.eq.project,payload->>dashboardScope.is.null")

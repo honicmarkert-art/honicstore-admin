@@ -15,9 +15,9 @@ type ProjectDashboardLayoutProps = {
 }
 
 const projectNav = [
-  { name: "Overview", href: "/PROJECTDASHBOARD", icon: LayoutDashboard },
-  { name: "Invoice", href: "/PROJECTDASHBOARD/invoice", icon: ReceiptText },
-  { name: "Invoice List", href: "/PROJECTDASHBOARD/invoices/list", icon: ListOrdered },
+  { name: "Overview", href: "/projectdashboard", icon: LayoutDashboard },
+  { name: "Invoice", href: "/projectdashboard/invoice", icon: ReceiptText },
+  { name: "Invoice List", href: "/projectdashboard/invoices/list", icon: ListOrdered },
 ]
 
 export default function ProjectDashboardLayout({ children }: ProjectDashboardLayoutProps) {
@@ -26,19 +26,19 @@ export default function ProjectDashboardLayout({ children }: ProjectDashboardLay
   const { themeClasses } = useTheme()
   const { loading, isAuthenticated, isAdmin } = useAuth()
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`)
-  const navExpanded = true
+
   const handleBack = () => {
     if (typeof window !== "undefined" && window.history.length > 1) {
       router.back()
       return
     }
-    router.push("/PROJECTDASHBOARD")
+    router.push("/projectdashboard")
   }
 
   useEffect(() => {
     if (loading) return
     if (isAuthenticated && isAdmin) return
-    const target = pathname || "/PROJECTDASHBOARD"
+    const target = pathname || "/projectdashboard"
     if (typeof window !== "undefined") {
       sessionStorage.setItem("post_login_redirect", target)
     }
@@ -57,15 +57,10 @@ export default function ProjectDashboardLayout({ children }: ProjectDashboardLay
 
   return (
     <div className={cn("min-h-screen", themeClasses.mainBg)}>
-      <div className={cn("grid min-h-screen grid-cols-1 md:grid-cols-[260px_1fr]")}>
+      <div className="grid min-h-screen grid-cols-1 md:grid-cols-[260px_1fr]">
         <aside className={cn("border-r p-4 md:p-5", themeClasses.cardBg, themeClasses.cardBorder)}>
           <div className="mb-4">
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full justify-start gap-2 rounded-2xl"
-              onClick={handleBack}
-            >
+            <Button type="button" variant="outline" className="w-full justify-start gap-2 rounded-2xl" onClick={handleBack}>
               <ArrowLeft className="h-4 w-4" />
               Back
             </Button>

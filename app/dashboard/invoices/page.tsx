@@ -23,6 +23,7 @@ type PaymentMethod = {
   id: string
   /** Optional, e.g. "CRDB", "M-Pesa" — shown above bank lines when set */
   title: string
+  accountName: string
   bank: string
   account: string
 }
@@ -93,9 +94,32 @@ const INV = {
   rowStripe: "#eff6ff",
   lineGray: "#e5e7eb",
 } as const
+const PROTOTYPE_RED_KEY = "__prototypeRowRed"
 
 function money(value: number): string {
   return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function isPrototypeSectionTitle(title: string): boolean {
+  return /prototype/i.test(String(title || ""))
+}
+
+function isPrototypeRowHighlighted(row: Record<string, string>): boolean {
+  const v = String(row?.[PROTOTYPE_RED_KEY] || "").toLowerCase()
+  return v === "1" || v === "true" || v === "yes"
+}
+
+function convertInlineBoldToHtml(text: string): string {
+  return escapeHtml(text).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+}
+
+function columnWidthForKey(key: string): string {
+  if (key === "sn") return "9%"
+  if (key === "item") return "43%"
+  if (key === "qty") return "12%"
+  if (key === "unitPrice") return "18%"
+  if (key === "totalPrice" || key === "amount") return "18%"
+  return "18%"
 }
 
 function parseMoneyInput(value: string): number {
@@ -217,6 +241,7 @@ export default function AdminInvoicesPage({
   const logoInputRef = useRef<HTMLInputElement | null>(null)
   const signatureInputRef = useRef<HTMLInputElement | null>(null)
   const stampInputRef = useRef<HTMLInputElement | null>(null)
+  const termsTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const [invoiceNumber, setInvoiceNumber] = useState(`INV-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`)
   const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10))
   const [dueDate, setDueDate] = useState(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
@@ -233,7 +258,7 @@ export default function AdminInvoicesPage({
   const [billToPhone, setBillToPhone] = useState("")
   const [billToAddress, setBillToAddress] = useState("")
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([
-    { id: "pm-1", title: "", bank: "Your Bank Name", account: "0000 0000 0000 0000" },
+    { id: "pm-1", title: "", accountName: "", bank: "SELCOM PESA", account: "6123 8368" },
   ])
   const [termsText, setTermsText] = useState(
     extraTables?.note ?? "Payment is due within 7 days. Please use the invoice number as your payment reference."
@@ -306,6 +331,9 @@ export default function AdminInvoicesPage({
         setFooterAddress(String(p.footerAddress || footerAddress))
         setThankYouLine(String(p.thankYouLine || thankYouLine))
         setTermsText(String(p.termsText || termsText))
+        if (typeof p.invoiceLogo === "string" && p.invoiceLogo) setInvoiceLogo(p.invoiceLogo)
+        if (typeof p.signatureImage === "string" && p.signatureImage) setSignatureImage(p.signatureImage)
+        if (typeof p.stampImage === "string" && p.stampImage) setStampImage(p.stampImage)
 
         if (Array.isArray(p.items) && p.items.length) {
           setItems(
@@ -323,6 +351,7 @@ export default function AdminInvoicesPage({
             p.paymentMethods.map((pm: any, idx: number) => ({
               id: String(pm.id || `pm-${Date.now()}-${idx}`),
               title: String(pm.title || ""),
+              accountName: String(pm.accountName || ""),
               bank: String(pm.bank || ""),
               account: String(pm.account || ""),
             }))
@@ -347,12 +376,16 @@ export default function AdminInvoicesPage({
   }, [savedInvoiceId])
 
   useEffect(() => {
-    const savedLogo = localStorage.getItem(LOGO_STORAGE_KEY)
-    if (savedLogo) setInvoiceLogo(savedLogo)
-    const savedSig = localStorage.getItem(SIGNATURE_STORAGE_KEY)
-    if (savedSig) setSignatureImage(savedSig)
-    const savedStamp = localStorage.getItem(STAMP_STORAGE_KEY)
-    if (savedStamp) setStampImage(savedStamp)
+    try {
+      const savedLogo = localStorage.getItem(LOGO_STORAGE_KEY)
+      if (savedLogo) setInvoiceLogo(savedLogo)
+      const savedSig = localStorage.getItem(SIGNATURE_STORAGE_KEY)
+      if (savedSig) setSignatureImage(savedSig)
+      const savedStamp = localStorage.getItem(STAMP_STORAGE_KEY)
+      if (savedStamp) setStampImage(savedStamp)
+    } catch {
+      // ignore storage access failures
+    }
   }, [])
 
   useEffect(() => {
@@ -481,6 +514,7 @@ export default function AdminInvoicesPage({
       {
         id: `pm-${Date.now()}-${prev.length}`,
         title: "",
+        accountName: "",
         bank: "",
         account: "",
       },
@@ -489,6 +523,25 @@ export default function AdminInvoicesPage({
 
   const removePaymentMethod = (id: string) => {
     setPaymentMethods((prev) => (prev.length > 1 ? prev.filter((p) => p.id !== id) : prev))
+  }
+
+  const handleTermsKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "b") return
+    e.preventDefault()
+    const el = termsTextareaRef.current
+    if (!el) return
+    const start = el.selectionStart ?? 0
+    const end = el.selectionEnd ?? 0
+    const selected = termsText.slice(start, end)
+    const wrapped = `**${selected || "bold text"}**`
+    const next = `${termsText.slice(0, start)}${wrapped}${termsText.slice(end)}`
+    setTermsText(next)
+    requestAnimationFrame(() => {
+      const caretStart = start + 2
+      const caretEnd = start + wrapped.length - 2
+      el.focus()
+      el.setSelectionRange(caretStart, caretEnd)
+    })
   }
 
   const isMoneyField = (key: string) => /price|amount|total|subtotal|pay/i.test(key)
@@ -553,18 +606,60 @@ export default function AdminInvoicesPage({
     })
   }
 
+  const togglePrototypeSectionRowHighlight = (sectionIndex: number, rowIndex: number, checked: boolean) => {
+    setProjectTables((prev) => {
+      if (!prev?.sections) return prev
+      const sections = prev.sections.map((section, sIdx) => {
+        if (sIdx !== sectionIndex) return section
+        if (!isPrototypeSectionTitle(section.title)) return section
+        const rows = section.rows.map((row, rIdx) =>
+          rIdx === rowIndex ? { ...row, [PROTOTYPE_RED_KEY]: checked ? "1" : "" } : row
+        )
+        return { ...section, rows }
+      })
+      return { ...prev, sections }
+    })
+  }
+
+  const uploadInvoiceAsset = async (file: File, kind: "logo" | "signature" | "stamp"): Promise<string> => {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "")
+      reader.onerror = () => reject(new Error("Failed to read image"))
+      reader.readAsDataURL(file)
+    })
+    if (!dataUrl) throw new Error("Empty image data")
+    const res = await fetch("/api/admin/invoices/assets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        kind,
+        filename: file.name,
+        dataUrl,
+      }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || !data?.success || !data?.url) {
+      throw new Error(data?.error || data?.details || "Asset upload failed")
+    }
+    return String(data.url)
+  }
+
   const handleLogoUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = typeof reader.result === "string" ? reader.result : ""
-      if (result) {
-        setInvoiceLogo(result)
-        localStorage.setItem(LOGO_STORAGE_KEY, result)
-      }
+    try {
+      const url = await uploadInvoiceAsset(file, "logo")
+      setInvoiceLogo(url)
+      localStorage.setItem(LOGO_STORAGE_KEY, url)
+    } catch (e) {
+      toast({
+        title: "Logo upload failed",
+        description: e instanceof Error ? e.message : "Could not upload logo to bucket.",
+        variant: "destructive",
+      })
     }
-    reader.readAsDataURL(file)
     event.target.value = ""
   }
 
@@ -573,22 +668,20 @@ export default function AdminInvoicesPage({
     localStorage.removeItem(LOGO_STORAGE_KEY)
   }
 
-  const readImageFile = (file: File, onResult: (dataUrl: string) => void) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = typeof reader.result === "string" ? reader.result : ""
-      if (result) onResult(result)
-    }
-    reader.readAsDataURL(file)
-  }
-
-  const handleSignatureUpload = (event: ChangeEvent<HTMLInputElement>) => {
+  const handleSignatureUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
-    readImageFile(file, (data) => {
-      setSignatureImage(data)
-      localStorage.setItem(SIGNATURE_STORAGE_KEY, data)
-    })
+    try {
+      const url = await uploadInvoiceAsset(file, "signature")
+      setSignatureImage(url)
+      localStorage.setItem(SIGNATURE_STORAGE_KEY, url)
+    } catch (e) {
+      toast({
+        title: "Signature upload failed",
+        description: e instanceof Error ? e.message : "Could not upload signature to bucket.",
+        variant: "destructive",
+      })
+    }
     event.target.value = ""
   }
 
@@ -597,13 +690,20 @@ export default function AdminInvoicesPage({
     localStorage.removeItem(SIGNATURE_STORAGE_KEY)
   }
 
-  const handleStampUpload = (event: ChangeEvent<HTMLInputElement>) => {
+  const handleStampUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
-    readImageFile(file, (data) => {
-      setStampImage(data)
-      localStorage.setItem(STAMP_STORAGE_KEY, data)
-    })
+    try {
+      const url = await uploadInvoiceAsset(file, "stamp")
+      setStampImage(url)
+      localStorage.setItem(STAMP_STORAGE_KEY, url)
+    } catch (e) {
+      toast({
+        title: "Stamp upload failed",
+        description: e instanceof Error ? e.message : "Could not upload stamp to bucket.",
+        variant: "destructive",
+      })
+    }
     event.target.value = ""
   }
 
@@ -659,29 +759,35 @@ export default function AdminInvoicesPage({
         return `
             <div class="pay-method">
               ${title}
-              <p class="pay-line"><span class="pay-lbl">Bank</span>${escapeHtml(pm.bank || "—")}</p>
-              <p class="pay-line pay-line-last"><span class="pay-lbl">Account</span>${escapeHtml(pm.account || "—")}</p>
+              <p class="pay-line"><span class="pay-lbl">Account name</span><strong>${escapeHtml(pm.accountName || "—")}</strong></p>
+              <p class="pay-line"><span class="pay-lbl">Bank</span><strong>${escapeHtml(pm.bank || "—")}</strong></p>
+              <p class="pay-line pay-line-last"><span class="pay-lbl">Account</span><strong>${escapeHtml(pm.account || "—")}</strong></p>
             </div>`
       })
       .join("")
 
     const extraSectionsHtml = (projectTables?.sections || [])
       .map((section) => {
+        const isPrototype = isPrototypeSectionTitle(section.title)
         const cols = section.columns
           .map(
             (col) =>
               `<th class="${
                 col.align === "right" ? "r" : col.align === "center" ? "c" : ""
-              }">${escapeHtml(col.label)}</th>`
+              }" style="width:${columnWidthForKey(col.key)};">${escapeHtml(col.label)}</th>`
           )
           .join("")
+        const colgroup = `<colgroup>${section.columns
+          .map((col) => `<col style="width:${columnWidthForKey(col.key)};" />`)
+          .join("")}</colgroup>`
         const rowsHtml = section.rows
           .map((row, rowIndex) => {
             const cells = section.columns
               .map((col) => {
                 const value = row[col.key] ?? ""
                 const klass = col.align === "right" ? "r" : col.align === "center" ? "c" : ""
-                return `<td class="${klass}">${escapeHtml(value)}</td>`
+                const rowRed = isPrototype && isPrototypeRowHighlighted(row)
+                return `<td class="${klass}" style="${rowRed ? "color:#b91c1c;" : ""}">${escapeHtml(value)}</td>`
               })
               .join("")
             return `<tr style="${rowIndex % 2 === 1 ? `background-color:${rowStripe} !important;` : ""}">${cells}</tr>`
@@ -693,6 +799,7 @@ export default function AdminInvoicesPage({
           <div class="extra-block">
             <p class="extra-title">${escapeHtml(section.title)}</p>
             <table class="extra-table">
+              ${colgroup}
               <thead><tr>${cols}</tr></thead>
               <tbody>${rowsHtml}${subtotalRow}</tbody>
             </table>
@@ -710,7 +817,14 @@ export default function AdminInvoicesPage({
       ? `
         <div class="extra-block">
           <p class="extra-title">PAYMENT SCHEDULE</p>
-          <table class="extra-table">
+          <table class="extra-table schedule-table">
+            <colgroup>
+              <col style="width:9%;" />
+              <col style="width:45%;" />
+              <col style="width:14%;" />
+              <col style="width:17%;" />
+              <col style="width:15%;" />
+            </colgroup>
             <thead>
               <tr>
                 <th class="c">Phase</th>
@@ -746,7 +860,7 @@ export default function AdminInvoicesPage({
       : ""
 
     const paymentMethodHtml = `
-      <div class="pay" style="margin-top:10px;">
+      <div class="pay" style="margin-top:22px;">
         <div class="pay-wrap">
           <div class="pay-head">Payment method</div>
           <div class="pay-box">
@@ -793,9 +907,9 @@ export default function AdminInvoicesPage({
             }
             .page-inner { position: relative; z-index: 1; }
             .sign-sig { margin: 10px 0 0; padding: 0; text-align: right; }
-            .sign-sig img { max-height: 64px; max-width: 220px; object-fit: contain; vertical-align: bottom; }
+            .sign-sig img { max-height: 64px; max-width: 170px; object-fit: contain; vertical-align: bottom; }
             .sign-stamp { margin: 8px 0 0; padding: 0; text-align: right; }
-            .sign-stamp img { max-height: 84px; max-width: 220px; object-fit: contain; vertical-align: bottom; opacity: 0.92; }
+            .sign-stamp img { max-height: 140px; max-width: 280px; object-fit: contain; vertical-align: bottom; opacity: 0.95; }
             .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
             .brand { display: flex; align-items: center; gap: 14px; }
             .co { font-size: 18px; font-weight: 800; color: #111; letter-spacing: -0.02em; }
@@ -818,7 +932,7 @@ export default function AdminInvoicesPage({
             th.c { text-align: center; }
             th.r { text-align: right; }
             .totals { display: block; margin-top: 0; border-top: 1px solid #e5e7eb; padding-top: 20px; }
-            .sum { max-width: 300px; margin-left: auto; text-align: right; }
+            .sum { max-width: 240px; margin-left: auto; text-align: right; }
             .pay { margin-top: 18px; max-width: 360px; text-align: left; }
             .pay-wrap { border: none; background: transparent; }
             .pay-head { background: transparent; color: #111827; font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; padding: 0 0 8px; margin: 0 0 8px; border: none; border-bottom: 1px solid #e5e7eb; }
@@ -832,7 +946,8 @@ export default function AdminInvoicesPage({
             .grand { background-color: ${blue} !important; background: ${blue} !important; color: #fff !important; border: 1px solid ${blue}; display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 6px; }
             .extra-block { margin-top: 8px; }
             .extra-title { margin: 0 0 6px; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; color: #0f172a; text-transform: uppercase; }
-            .extra-table { width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; margin-top: 4px; }
+            .extra-table { width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; margin-top: 4px; table-layout: fixed; }
+            .schedule-table { table-layout: auto; }
             .extra-table th { background-color: ${blue} !important; color: #fff !important; font-size: 10px; padding: 7px 10px; border: 1px solid ${blue}; }
             .extra-table td { font-size: 11px; border: 1px solid #e5e7eb; padding: 6px 10px; color: #0f172a; }
             .extra-table td.c, .extra-table th.c { text-align: center; }
@@ -841,7 +956,7 @@ export default function AdminInvoicesPage({
             .foot { margin-top: 28px; display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; align-items: flex-end; }
             .terms { flex: 1; min-width: 200px; font-size: 12px; line-height: 1.5; color: #4b5563; }
             .terms h4 { font-size: 12px; font-weight: 800; color: #111; margin: 10px 0 4px; }
-            .sign { text-align: right; min-width: 180px; }
+            .sign { text-align: right; min-width: 150px; max-width: 170px; }
             .sign-name { font-size: 18px; font-family: Georgia, 'Times New Roman', serif; font-style: italic; color: #1f2937; }
             .sign-b { font-size: 12px; font-weight: 800; color: #111; margin-top: 8px; }
             .sign-t { font-size: 11px; color: #6b7280; }
@@ -938,7 +1053,7 @@ export default function AdminInvoicesPage({
               <div class="terms">
                 <p style="margin:0 0 8px;font-weight:800;color:#111;">${escapeHtml(thankYouLine || "Thank you.")}</p>
                 <h4>Term and Conditions:</h4>
-                <p style="margin:0;white-space:pre-line;">${escapeHtml(termsText || "—")}</p>
+                <p style="margin:0;white-space:pre-line;">${convertInlineBoldToHtml(termsText || "—")}</p>
               </div>
               <div class="sign">
                 <p class="sign-name">${escapeHtml(signerName)}</p>
@@ -1050,6 +1165,18 @@ export default function AdminInvoicesPage({
       return
     }
 
+    const hasMissingPaymentRequired = paymentMethods.some(
+      (pm) => !String(pm.accountName || "").trim() || !String(pm.bank || "").trim() || !String(pm.account || "").trim()
+    )
+    if (hasMissingPaymentRequired) {
+      toast({
+        title: "Payment method incomplete",
+        description: "Please fill Account name, Bank, and Account number for each payment method.",
+        variant: "destructive",
+      })
+      return
+    }
+
     const payload = {
       invoiceNumber,
       dashboardScope,
@@ -1077,6 +1204,9 @@ export default function AdminInvoicesPage({
       items,
       paymentMethods,
       projectTables,
+      invoiceLogo,
+      signatureImage,
+      stampImage,
       totals: {
         subtotal: effectiveSubtotal,
         taxAmount: effectiveTaxAmount,
@@ -1309,6 +1439,7 @@ export default function AdminInvoicesPage({
                   Project sections (editable)
                 </p>
                 {projectTables?.sections?.map((section, sectionIndex) => {
+                  const prototypeSection = isPrototypeSectionTitle(section.title)
                   const nCols = section.columns.length
                   const projectRowGridClass =
                     nCols <= 2
@@ -1321,7 +1452,8 @@ export default function AdminInvoicesPage({
                             ? "md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
                             : "md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
                   return (
-                  <div key={section.title} className="rounded-lg border border-border/80 p-3">
+                  <div key={section.title} className="space-y-2">
+                  <div className="rounded-lg border border-border/80 p-3">
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <p className="text-xs font-extrabold uppercase tracking-wide text-slate-700">{section.title}</p>
                       <Button type="button" size="sm" variant="outline" className="h-7 gap-1" onClick={() => addProjectSectionRow(sectionIndex)}>
@@ -1343,23 +1475,40 @@ export default function AdminInvoicesPage({
                                 readOnly={isAutoLineTotalField}
                                 onChange={(e) => updateProjectSectionCell(sectionIndex, rowIndex, col.key, e.target.value)}
                                 placeholder={col.label}
-                                className={cn(isAutoLineTotalField && "cursor-default bg-muted/50 tabular-nums")}
+                                className={cn(
+                                  isAutoLineTotalField && "cursor-default bg-muted/50 tabular-nums",
+                                  prototypeSection && isPrototypeRowHighlighted(row) && "text-red-700"
+                                )}
                               />
                             )
                           })}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-9 w-9"
-                            onClick={() => removeProjectSectionRow(sectionIndex, rowIndex)}
-                            aria-label="Remove row"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <div className="flex items-center justify-end gap-2">
+                            {prototypeSection ? (
+                              <label className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700">
+                                <input
+                                  type="checkbox"
+                                  checked={isPrototypeRowHighlighted(row)}
+                                  onChange={(e) => togglePrototypeSectionRowHighlight(sectionIndex, rowIndex, e.target.checked)}
+                                  className="h-4 w-4 rounded border-slate-300"
+                                />
+                                Red
+                              </label>
+                            ) : null}
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-9 w-9"
+                              onClick={() => removeProjectSectionRow(sectionIndex, rowIndex)}
+                              aria-label="Remove row"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
                       ))}
                     </div>
+                  </div>
                   </div>
                 );
                 })}
@@ -1529,6 +1678,12 @@ export default function AdminInvoicesPage({
                   />
                   <Input
                     className="mb-2"
+                    value={pm.accountName}
+                    onChange={(e) => updatePaymentMethod(pm.id, { accountName: e.target.value })}
+                    placeholder="Account name"
+                  />
+                  <Input
+                    className="mb-2"
                     value={pm.bank}
                     onChange={(e) => updatePaymentMethod(pm.id, { bank: e.target.value })}
                     placeholder="Bank or provider"
@@ -1561,7 +1716,15 @@ export default function AdminInvoicesPage({
             </div>
             <div>
               <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>Terms and conditions</label>
-              <Textarea value={termsText} onChange={(e) => setTermsText(e.target.value)} rows={3} className="resize-y" />
+              <p className={cn("mb-1 text-[11px]", themeClasses.textNeutralSecondary)}>Use Ctrl+B to wrap selected text in bold.</p>
+              <Textarea
+                ref={termsTextareaRef}
+                value={termsText}
+                onChange={(e) => setTermsText(e.target.value)}
+                onKeyDown={handleTermsKeyDown}
+                rows={3}
+                className="resize-y"
+              />
             </div>
                 </>
               ) : null}
@@ -1641,7 +1804,7 @@ export default function AdminInvoicesPage({
                 </div>
                 {stampImage ? (
                   <div className="mt-2 flex justify-center rounded-md bg-slate-100/80 p-2 dark:bg-slate-800/50">
-                    <img src={stampImage} alt="" className="h-20 w-auto max-w-full object-contain" />
+                    <img src={stampImage} alt="" className="h-32 w-auto max-w-full object-contain" />
                   </div>
                 ) : null}
               </div>
@@ -1790,11 +1953,18 @@ export default function AdminInvoicesPage({
                 </div>
               ) : null}
 
-              {projectTables?.sections?.map((section) => (
+              {projectTables?.sections?.map((section) => {
+                const prototypeSection = isPrototypeSectionTitle(section.title)
+                return (
                 <div key={section.title} className="mt-2 px-6">
                   <p className="mb-1.5 text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-900">{section.title}</p>
                   <div className="overflow-x-auto border border-slate-300">
-                    <table className="min-w-full border-collapse">
+                    <table className="min-w-full table-fixed border-collapse">
+                      <colgroup>
+                        {section.columns.map((col) => (
+                          <col key={`${section.title}-${col.key}-w`} style={{ width: columnWidthForKey(col.key) }} />
+                        ))}
+                      </colgroup>
                       <thead>
                         <tr style={{ background: INV.blue }}>
                           {section.columns.map((col) => (
@@ -1817,7 +1987,8 @@ export default function AdminInvoicesPage({
                               <td
                                 key={`${section.title}-${index}-${col.key}`}
                                 className={cn(
-                                  "border border-slate-200 px-3 py-1.5 text-xs text-slate-800",
+                                  "border border-slate-200 px-3 py-1.5 text-xs",
+                                  prototypeSection && isPrototypeRowHighlighted(row) ? "text-red-700" : "text-slate-800",
                                   col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"
                                 )}
                               >
@@ -1838,10 +2009,11 @@ export default function AdminInvoicesPage({
                     </table>
                   </div>
                 </div>
-              ))}
+                )
+              })}
 
               <div className="mt-0 flex flex-col gap-4 border-t border-slate-200 bg-white px-6 pb-2 pt-5">
-                <div className="ml-auto w-full max-w-sm">
+                <div className="ml-auto w-full max-w-[240px]">
                   <div className="flex justify-between text-xs text-slate-600">
                     <span>Sub Total :</span>
                     <span className="font-medium tabular-nums text-slate-900">{currency} {money(effectiveSubtotal)}</span>
@@ -1871,6 +2043,13 @@ export default function AdminInvoicesPage({
                   <p className="mb-1.5 text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-900">PAYMENT SCHEDULE</p>
                   <div className="overflow-x-auto border border-slate-300">
                     <table className="min-w-full border-collapse">
+                      <colgroup>
+                        <col style={{ width: "9%" }} />
+                        <col style={{ width: "45%" }} />
+                        <col style={{ width: "14%" }} />
+                        <col style={{ width: "17%" }} />
+                        <col style={{ width: "15%" }} />
+                      </colgroup>
                       <thead>
                         <tr style={{ background: INV.blue }}>
                           <th className="border border-blue-700 px-3 py-1.5 text-center text-[10px] font-bold uppercase tracking-[0.07em] text-white">Phase</th>
@@ -1909,7 +2088,7 @@ export default function AdminInvoicesPage({
                 </div>
               ) : null}
 
-              <div className="mt-2 px-6">
+              <div className="mt-6 px-6">
                 <div className="w-full max-w-md self-start text-left">
                   <div className="w-full max-w-md">
                     <p className="border-b border-slate-200 pb-2 text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-800 dark:border-slate-600 dark:text-slate-200">
@@ -1930,12 +2109,16 @@ export default function AdminInvoicesPage({
                             </p>
                           ) : null}
                           <div>
+                            <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Account name</span>
+                            <span className="font-bold text-slate-900">{pm.accountName || "—"}</span>
+                          </div>
+                          <div className="mt-1.5">
                             <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Bank</span>
-                            {pm.bank || "—"}
+                            <span className="font-bold text-slate-900">{pm.bank || "—"}</span>
                           </div>
                           <div className="mt-1.5">
                             <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Account</span>
-                            {pm.account || "—"}
+                            <span className="font-bold text-slate-900">{pm.account || "—"}</span>
                           </div>
                         </div>
                       ))}
@@ -1949,9 +2132,12 @@ export default function AdminInvoicesPage({
                 <div className="text-xs leading-relaxed text-slate-600">
                   <p className="font-extrabold text-slate-900">{thankYouLine}</p>
                   <h4 className="mt-3 text-xs font-extrabold text-slate-900">Term and Conditions:</h4>
-                  <p className="mt-1 whitespace-pre-line">{termsText}</p>
+                  <p
+                    className="mt-1 whitespace-pre-line"
+                    dangerouslySetInnerHTML={{ __html: convertInlineBoldToHtml(termsText || "—") }}
+                  />
                 </div>
-                <div className="text-left sm:text-right">
+                <div className="w-full max-w-[280px] text-left sm:ml-auto sm:text-right">
                   <p
                     className="font-['Georgia',serif] text-lg italic text-slate-700"
                   >
@@ -1963,14 +2149,14 @@ export default function AdminInvoicesPage({
                     <img
                       src={signatureImage}
                       alt=""
-                      className="ml-auto mt-2 block h-16 w-auto max-w-[220px] object-contain"
+                      className="ml-auto mt-2 block h-16 w-auto max-w-[170px] object-contain"
                     />
                   ) : null}
                   {stampImage ? (
                     <img
                       src={stampImage}
                       alt=""
-                      className="ml-auto mt-2 block h-20 w-auto max-w-[220px] object-contain opacity-90"
+                      className="ml-auto mt-2 block h-36 w-auto max-w-[280px] object-contain opacity-95"
                     />
                   ) : null}
                 </div>
