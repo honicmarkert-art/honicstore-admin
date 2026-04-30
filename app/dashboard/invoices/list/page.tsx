@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -18,7 +17,10 @@ type SavedInvoice = {
   due_date: string | null
   currency: string
   grand_total: number
+  total_paid?: number
+  total_due?: number
   created_at: string
+  hiddenFromList?: boolean
 }
 
 type InvoiceResponse = {
@@ -50,7 +52,6 @@ export default function InvoiceClientsListPage({
 }) {
   const { themeClasses } = useTheme()
   const { formatPrice } = useCurrency()
-  const sp = useSearchParams()
   const [query, setQuery] = useState("")
   const [invoices, setInvoices] = useState<SavedInvoice[]>([])
   const [loading, setLoading] = useState(true)
@@ -101,7 +102,7 @@ export default function InvoiceClientsListPage({
       ctrl.abort()
       window.clearTimeout(t)
     }
-  }, [query, reloadTick, dashboardScope, sp])
+  }, [query, reloadTick, dashboardScope])
 
   const deleteInvoice = async (invoiceId: string, invoiceNumber: string) => {
     const ok = window.confirm(`Delete invoice ${invoiceNumber || invoiceId}? This cannot be undone.`)
@@ -126,7 +127,6 @@ export default function InvoiceClientsListPage({
   }
 
   const hideInvoiceFromList = async (invoiceId: string, checked: boolean) => {
-    if (!checked) return
     setHidingId(invoiceId)
     setError(null)
     try {
@@ -134,21 +134,32 @@ export default function InvoiceClientsListPage({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ hiddenFromList: true }),
+        body: JSON.stringify({ hiddenFromList: checked }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || "Failed to hide invoice")
       }
-      setReloadTick((n) => n + 1)
+      const current = invoices.find((inv) => inv.id === invoiceId)
+      setInvoices((prev) => prev.map((inv) => (inv.id === invoiceId ? { ...inv, hiddenFromList: checked } : inv)))
+      if (current) {
+        const amount = Number(current.grand_total || 0)
+        const paid = Number(current.total_paid || 0)
+        const due = Number(current.total_due || Math.max(0, amount - paid))
+        const delta = checked ? -1 : 1
+        setSummary((prev) => ({
+          totalCount: Math.max(0, prev.totalCount + delta),
+          totalAmount: Math.max(0, prev.totalAmount + delta * amount),
+          totalPaid: Math.max(0, prev.totalPaid + delta * paid),
+          totalDue: Math.max(0, prev.totalDue + delta * due),
+        }))
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to hide invoice.")
     } finally {
       setHidingId(null)
     }
   }
-
-  const clientCount = useMemo(() => new Set(invoices.map((i) => i.client_name)).size, [invoices])
 
   return (
     <div className={cn("space-y-6", themeClasses.mainText)}>
@@ -164,7 +175,7 @@ export default function InvoiceClientsListPage({
         </Button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-4">
         <Card className={cn(themeClasses.cardBg, themeClasses.cardBorder)}>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Total invoices</CardTitle>
@@ -176,12 +187,6 @@ export default function InvoiceClientsListPage({
             <CardTitle className="text-sm">Total invoice amount</CardTitle>
           </CardHeader>
           <CardContent className="text-2xl font-bold">{formatPrice(summary.totalAmount)}</CardContent>
-        </Card>
-        <Card className={cn(themeClasses.cardBg, themeClasses.cardBorder)}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Clients in view</CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-bold">{clientCount}</CardContent>
         </Card>
         <Card className={cn(themeClasses.cardBg, themeClasses.cardBorder)}>
           <CardHeader className="pb-2">
@@ -234,7 +239,7 @@ export default function InvoiceClientsListPage({
                 </thead>
                 <tbody>
                   {invoices.map((inv) => (
-                    <tr key={inv.id} className="border-b">
+                    <tr key={inv.id} className={cn("border-b", inv.hiddenFromList && "bg-muted/40 opacity-60")}>
                       <td className="px-3 py-2 font-medium">{inv.invoice_number || "—"}</td>
                       <td className="px-3 py-2">{inv.client_name}</td>
                       <td className="px-3 py-2">{fmtDate(inv.issue_date)}</td>
@@ -246,24 +251,35 @@ export default function InvoiceClientsListPage({
                           <label className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                             <input
                               type="checkbox"
+                              checked={Boolean(inv.hiddenFromList)}
                               disabled={hidingId === inv.id}
                               onChange={(e) => hideInvoiceFromList(inv.id, e.target.checked)}
                             />
-                            {hidingId === inv.id ? "Hiding..." : "Hide"}
+                            {hidingId === inv.id ? "Saving..." : "Hide"}
                           </label>
-                          <Button asChild size="sm" variant="outline">
-                            <Link href={`${studioBasePath}?invoiceId=${inv.id}&mode=preview`}>Preview</Link>
-                          </Button>
-                          <Button asChild size="sm" variant="outline">
-                            <Link href={`${studioBasePath}?invoiceId=${inv.id}&mode=edit`}>Edit</Link>
-                          </Button>
-                          <Button asChild size="sm">
-                            <Link href={`${listBasePath}/${inv.id}?scope=${dashboardScope}`}>Payments</Link>
-                          </Button>
+                          {inv.hiddenFromList ? (
+                            <>
+                              <Button size="sm" variant="outline" disabled>Preview</Button>
+                              <Button size="sm" variant="outline" disabled>Edit</Button>
+                              <Button size="sm" disabled>Payments</Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button asChild size="sm" variant="outline">
+                                <Link href={`${studioBasePath}?invoiceId=${inv.id}&mode=preview`}>Preview</Link>
+                              </Button>
+                              <Button asChild size="sm" variant="outline">
+                                <Link href={`${studioBasePath}?invoiceId=${inv.id}&mode=edit`}>Edit</Link>
+                              </Button>
+                              <Button asChild size="sm">
+                                <Link href={`${listBasePath}/${inv.id}?scope=${dashboardScope}`}>Payments</Link>
+                              </Button>
+                            </>
+                          )}
                           <Button
                             size="sm"
                             variant="destructive"
-                            disabled={deletingId === inv.id}
+                            disabled={deletingId === inv.id || Boolean(inv.hiddenFromList)}
                             onClick={() => deleteInvoice(inv.id, inv.invoice_number)}
                           >
                             {deletingId === inv.id ? "Deleting..." : "Delete"}

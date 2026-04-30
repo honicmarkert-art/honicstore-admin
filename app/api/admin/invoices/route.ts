@@ -137,10 +137,9 @@ export async function GET(request: NextRequest) {
     if (!summaryOnly) {
       let query = supabase
         .from(INVOICES_TABLE)
-        .select("id, invoice_number, client_name, issue_date, due_date, currency, grand_total, created_at")
+        .select("id, invoice_number, client_name, issue_date, due_date, currency, grand_total, created_at, payload")
         .order("created_at", { ascending: false })
         .limit(limit)
-        .or("payload->>hiddenFromList.is.null,payload->>hiddenFromList.eq.false")
 
       if (q) {
         query = query.ilike("client_name", `%${q}%`)
@@ -162,7 +161,21 @@ export async function GET(request: NextRequest) {
           { status: 500 }
         )
       }
-      invoices = result.data || []
+      invoices = (result.data || []).map((row: any) => {
+        const records = row?.payload?.payments?.records
+        const paidTotal = Array.isArray(records)
+          ? records.reduce((acc: number, r: any) => acc + Number(r?.amount || 0), 0)
+          : 0
+        const grand = Number(row?.grand_total || 0)
+        const totalPaid = Math.max(0, Math.min(grand, paidTotal))
+        const totalDue = Math.max(0, grand - totalPaid)
+        return {
+          ...row,
+          hiddenFromList: Boolean(row?.payload?.hiddenFromList),
+          total_paid: totalPaid,
+          total_due: totalDue,
+        }
+      })
     }
 
     // Summary for dashboard cards and list header

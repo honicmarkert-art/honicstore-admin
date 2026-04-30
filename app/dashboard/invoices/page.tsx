@@ -258,7 +258,7 @@ export default function AdminInvoicesPage({
   const [billToPhone, setBillToPhone] = useState("")
   const [billToAddress, setBillToAddress] = useState("")
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([
-    { id: "pm-1", title: "", accountName: "", bank: "SELCOM PESA", account: "6123 8368" },
+    { id: "pm-1", title: "LIPA NAMBA", accountName: "HONIC COMPANY LIMITED", bank: "SELCOM PESA", account: "6123 8368" },
   ])
   const [termsText, setTermsText] = useState(
     extraTables?.note ?? "Payment is due within 7 days. Please use the invoice number as your payment reference."
@@ -292,6 +292,7 @@ export default function AdminInvoicesPage({
     footer: true,
   })
   const savedInvoiceId = searchParams.get("invoiceId")
+  const clientNameParam = searchParams.get("clientName")
   const studioMode = searchParams.get("mode")
   const isPreviewOnly = studioMode === "preview"
   const backToSavedInvoice = savedInvoiceId ? `/dashboard/invoices/list/${savedInvoiceId}?tab=preview` : "/dashboard/invoices/list"
@@ -374,6 +375,12 @@ export default function AdminInvoicesPage({
       cancelled = true
     }
   }, [savedInvoiceId])
+
+  useEffect(() => {
+    if (savedInvoiceId) return
+    if (!clientNameParam) return
+    setBillToName(clientNameParam)
+  }, [clientNameParam, savedInvoiceId])
 
   useEffect(() => {
     try {
@@ -513,10 +520,10 @@ export default function AdminInvoicesPage({
       ...prev,
       {
         id: `pm-${Date.now()}-${prev.length}`,
-        title: "",
-        accountName: "",
-        bank: "",
-        account: "",
+        title: "LIPA NAMBA",
+        accountName: "HONIC COMPANY LIMITED",
+        bank: "SELCOM PESA",
+        account: "6123 8368",
       },
     ])
   }

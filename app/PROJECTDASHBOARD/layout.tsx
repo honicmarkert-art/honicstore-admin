@@ -1,10 +1,10 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { LayoutDashboard, ReceiptText, ArrowLeft, ListOrdered } from "lucide-react"
+import { LayoutDashboard, ReceiptText, ArrowLeft, ListOrdered, PanelLeftClose, PanelLeftOpen, ChartNoAxesCombined } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useTheme } from "@/hooks/use-theme"
 import { Button } from "@/components/ui/button"
@@ -16,6 +16,7 @@ type ProjectDashboardLayoutProps = {
 
 const projectNav = [
   { name: "Overview", href: "/projectdashboard", icon: LayoutDashboard },
+  { name: "Usage Tracking", href: "/projectdashboard/usage", icon: ChartNoAxesCombined },
   { name: "Invoice", href: "/projectdashboard/invoice", icon: ReceiptText },
   { name: "Invoice List", href: "/projectdashboard/invoices/list", icon: ListOrdered },
 ]
@@ -26,6 +27,7 @@ export default function ProjectDashboardLayout({ children }: ProjectDashboardLay
   const { themeClasses } = useTheme()
   const { loading, isAuthenticated, isAdmin } = useAuth()
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`)
+  const [navExpanded, setNavExpanded] = useState(true)
 
   const handleBack = () => {
     if (typeof window !== "undefined" && window.history.length > 1) {
@@ -57,13 +59,19 @@ export default function ProjectDashboardLayout({ children }: ProjectDashboardLay
 
   return (
     <div className={cn("min-h-screen", themeClasses.mainBg)}>
-      <div className="grid min-h-screen grid-cols-1 md:grid-cols-[260px_1fr]">
+      <div className={cn("grid min-h-screen grid-cols-1", navExpanded && "md:grid-cols-[260px_1fr]")}>
+        {navExpanded ? (
         <aside className={cn("border-r p-4 md:p-5", themeClasses.cardBg, themeClasses.cardBorder)}>
           <div className="mb-4">
-            <Button type="button" variant="outline" className="w-full justify-start gap-2 rounded-2xl" onClick={handleBack}>
-              <ArrowLeft className="h-4 w-4" />
-              Back
-            </Button>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" className="flex-1 justify-start gap-2 rounded-2xl" onClick={handleBack}>
+                <ArrowLeft className="h-4 w-4" />
+                Back
+              </Button>
+              <Button type="button" variant="outline" size="icon" className="rounded-2xl" onClick={() => setNavExpanded(false)} aria-label="Collapse sidebar">
+                <PanelLeftClose className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
           <div className="mb-6 rounded-2xl border bg-muted/30 p-4">
@@ -111,8 +119,17 @@ export default function ProjectDashboardLayout({ children }: ProjectDashboardLay
             </Button>
           </div>
         </aside>
+        ) : null}
 
         <main className="min-w-0">
+          {!navExpanded ? (
+            <section className="px-4 pt-4 md:px-6 md:pt-6">
+              <Button type="button" variant="outline" className="gap-2 rounded-2xl" onClick={() => setNavExpanded(true)}>
+                <PanelLeftOpen className="h-4 w-4" />
+                Show sidebar
+              </Button>
+            </section>
+          ) : null}
           <section className="p-4 md:p-6">{children}</section>
         </main>
       </div>
