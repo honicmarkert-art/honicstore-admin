@@ -233,7 +233,7 @@ export default function InvoiceClientsListPage({
                     <th className="px-3 py-2 text-left">Issue</th>
                     <th className="px-3 py-2 text-left">Due</th>
                     <th className="px-3 py-2 text-right">Amount</th>
-                    <th className="px-3 py-2 text-left">Saved</th>
+                    <th className="px-3 py-2 text-right">Paid</th>
                     <th className="px-3 py-2 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -245,7 +245,7 @@ export default function InvoiceClientsListPage({
                       <td className="px-3 py-2">{fmtDate(inv.issue_date)}</td>
                       <td className="px-3 py-2">{fmtDate(inv.due_date)}</td>
                       <td className="px-3 py-2 text-right">{formatPrice(Number(inv.grand_total || 0))}</td>
-                      <td className="px-3 py-2">{fmtDate(inv.created_at)}</td>
+                      <td className="px-3 py-2 text-right">{formatPrice(Number(inv.total_paid || 0))}</td>
                       <td className="px-3 py-2 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <label className="inline-flex items-center gap-1 text-xs text-muted-foreground">
