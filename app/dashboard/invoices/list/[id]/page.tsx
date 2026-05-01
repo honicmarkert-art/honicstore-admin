@@ -39,6 +39,60 @@ function getSectionSubtotal(section: any): number {
   return rows.reduce((sum: number, row: any) => sum + parseAmount(row?.[totalKey]), 0)
 }
 
+/** Split whole amount across two phases (floor/ceil) so the pair sums exactly. */
+function splitIntoTwoPhases(total: number): [number, number] {
+  const t = Math.max(0, Math.round(Number(total) || 0))
+  const a = Math.floor(t / 2)
+  const b = t - a
+  return [a, b]
+}
+
+/**
+ * Phases 1–2: half each of (invoice grand total − Service section total).
+ * Phases 3–4: half each of Service section total (capped to grand total if needed).
+ * No project tables: split grand total evenly across four phases.
+ */
+function buildPaymentPhaseScheduledAmounts(grandTotal: number, serviceSectionTotal: number, hasProjectTables: boolean): number[] {
+  const gt = Math.max(0, Math.round(Number(grandTotal) || 0))
+  if (!hasProjectTables) {
+    if (gt > 0) {
+      const q = Math.floor(gt / 4)
+      const r = gt - q * 4
+      return [q + (r > 0 ? 1 : 0), q + (r > 1 ? 1 : 0), q + (r > 2 ? 1 : 0), q]
+    }
+    return [0, 0, 0, 0]
+  }
+  const svcRaw = Math.max(0, Math.round(Number(serviceSectionTotal) || 0))
+  const svcApplied = Math.min(svcRaw, gt)
+  const materialRemainder = Math.max(0, gt - svcApplied)
+  const [p1, p2] = splitIntoTwoPhases(materialRemainder)
+  const [p3, p4] = splitIntoTwoPhases(svcApplied)
+  return [p1, p2, p3, p4]
+}
+
+function sumSchedulePhases(
+  rows: Array<{ scheduled: number; paid: number; due: number; paidPreview: number; duePreview: number }>,
+  startIdx: number,
+  endIdx: number,
+  usePreview: boolean
+) {
+  let scheduled = 0
+  let paid = 0
+  let due = 0
+  for (let i = startIdx; i <= endIdx && i < rows.length; i++) {
+    const r = rows[i]!
+    scheduled += r.scheduled
+    if (usePreview) {
+      paid += r.paidPreview
+      due += r.duePreview
+    } else {
+      paid += r.paid
+      due += r.due
+    }
+  }
+  return { scheduled, paid, due }
+}
+
 export default function SavedInvoiceDetailPage() {
   const { themeClasses } = useTheme()
   const { formatPrice } = useCurrency()
@@ -119,23 +173,39 @@ export default function SavedInvoiceDetailPage() {
     const rec = invoice?.payload?.payments?.records
     return Array.isArray(rec) ? rec : []
   }, [invoice])
-  const paidTotal = useMemo(() => paymentRecords.reduce((s, p) => s + Number(p.amount || 0), 0), [paymentRecords])
-  const previewPaidTotal = paidTotal + Math.max(0, paymentAmount || 0)
+  const paidTotal = useMemo(
+    () => Math.round(paymentRecords.reduce((s, p) => s + Number(p.amount || 0), 0)),
+    [paymentRecords]
+  )
+  const previewPaidTotal = paidTotal + Math.max(0, Math.round(Number(paymentAmount) || 0))
   const dueAmount = Math.max(0, grandTotal - paidTotal)
   const dueAmountPreview = Math.max(0, grandTotal - previewPaidTotal)
-  const scheduleRows = useMemo(() => {
+
+  const sectionTotals = useMemo(() => {
     const sections = invoice?.payload?.projectTables?.sections || []
-    const raw = invoice?.payload?.projectTables?.paymentSchedule || []
     const material = (sections[0] ? getSectionSubtotal(sections[0]) : 0) + (sections[1] ? getSectionSubtotal(sections[1]) : 0)
     const service = sections[2] ? getSectionSubtotal(sections[2]) : 0
-    const amountToPay = [material / 2, material / 2, service / 2, service / 2]
+    return {
+      material,
+      service,
+      materialRounded: Math.round(material),
+      serviceRounded: Math.round(service),
+      combinedRounded: Math.round(Math.max(0, material + service)),
+      hasProjectSections: sections.length > 0,
+    }
+  }, [invoice])
+
+  const scheduleRows = useMemo(() => {
+    const raw = invoice?.payload?.projectTables?.paymentSchedule || []
+    const amountToPay = buildPaymentPhaseScheduledAmounts(grandTotal, sectionTotals.service, sectionTotals.hasProjectSections)
 
     const allocate = (totalPaid: number) => {
-      let remaining = totalPaid
+      let remaining = Math.max(0, Math.round(Number(totalPaid) || 0))
       return amountToPay.map((a) => {
-        const paid = Math.max(0, Math.min(a, remaining))
+        const sched = Math.round(Number(a) || 0)
+        const paid = Math.max(0, Math.min(sched, remaining))
         remaining = Math.max(0, remaining - paid)
-        return { scheduled: a, paid, due: Math.max(0, a - paid) }
+        return { scheduled: sched, paid, due: Math.max(0, sched - paid) }
       })
     }
     const allocSaved = allocate(paidTotal)
@@ -143,13 +213,13 @@ export default function SavedInvoiceDetailPage() {
     return amountToPay.map((a, i) => ({
       phase: String(i + 1),
       deadline: raw[i]?.deadline || "",
-      scheduled: a,
+      scheduled: allocSaved[i]?.scheduled ?? Math.round(Number(a) || 0),
       paid: allocSaved[i]?.paid || 0,
       due: allocSaved[i]?.due || 0,
       paidPreview: allocPreview[i]?.paid || 0,
       duePreview: allocPreview[i]?.due || 0,
     }))
-  }, [invoice, paidTotal, previewPaidTotal])
+  }, [invoice, sectionTotals.service, sectionTotals.hasProjectSections, grandTotal, paidTotal, previewPaidTotal])
   const scheduleTotalDue = useMemo(() => scheduleRows.reduce((s, r) => s + r.due, 0), [scheduleRows])
   const scheduleTotalDuePreview = useMemo(() => scheduleRows.reduce((s, r) => s + r.duePreview, 0), [scheduleRows])
 
@@ -224,6 +294,30 @@ export default function SavedInvoiceDetailPage() {
     }
   }
 
+  const deletePaymentRecord = async (recordId: string) => {
+    const ok = window.confirm("Delete this payment record?")
+    if (!ok) return
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/admin/invoices/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          removePaymentRecordId: recordId,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) throw new Error(data?.error || "Failed to delete payment")
+      await refreshInvoice()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete payment")
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className={cn("space-y-6", themeClasses.mainText)}>
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -267,6 +361,25 @@ export default function SavedInvoiceDetailPage() {
             </div>
             <div className="rounded-md border p-3">
               <p className="mb-2 text-sm font-semibold">Payment Schedule (auto marking by amount entered)</p>
+              <p className={cn("mb-2 text-xs leading-relaxed", themeClasses.textNeutralSecondary)}>
+                {sectionTotals.hasProjectSections ? (
+                  <>
+                    <strong>Scheduled:</strong> Phases <strong>1–2</strong> each use half of{" "}
+                    <strong>(invoice total − Service section)</strong>:{" "}
+                    <strong className="text-slate-800">{formatPrice(Math.round(grandTotal || 0))}</strong> −{" "}
+                    <strong className="text-slate-800">{formatPrice(Math.min(sectionTotals.serviceRounded, Math.round(grandTotal || 0)))}</strong> service → remainder split across phases 1 and 2.
+                    Phases <strong>3–4</strong> each use half of the Service section (
+                    <strong className="text-slate-800">{formatPrice(sectionTotals.serviceRounded)}</strong>
+                    ). Electrical + Prototype table totals{" "}
+                    <strong className="text-slate-800">{formatPrice(sectionTotals.materialRounded)}</strong> are informational only here.
+                  </>
+                ) : (
+                  <>
+                    <strong>Scheduled:</strong> Invoice total split evenly across four phases (no project tables on this invoice).
+                  </>
+                )}{" "}
+                <strong>Paid</strong> fills phases <strong>1 → 2 → 3 → 4</strong> in order.
+              </p>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px] border-collapse text-sm">
                   <thead>
@@ -292,6 +405,35 @@ export default function SavedInvoiceDetailPage() {
                         </td>
                       </tr>
                     ))}
+                    {scheduleRows.length > 0 ? (
+                      <>
+                        {(() => {
+                          const preview = paymentAmount > 0
+                          const mat = sumSchedulePhases(scheduleRows, 0, 1, preview)
+                          const svc = sumSchedulePhases(scheduleRows, 2, 3, preview)
+                          return (
+                            <>
+                              <tr className="border-t-2 border-slate-300 bg-slate-100 font-semibold text-slate-900">
+                                <td className="px-2 py-2" colSpan={2}>
+                                  Material subtotal (phases 1–2)
+                                </td>
+                                <td className="px-2 py-2 text-right">{formatPrice(mat.scheduled)}</td>
+                                <td className="px-2 py-2 text-right">{formatPrice(mat.paid)}</td>
+                                <td className="px-2 py-2 text-right">{formatPrice(mat.due)}</td>
+                              </tr>
+                              <tr className="border-b bg-slate-100 font-semibold text-slate-900">
+                                <td className="px-2 py-2" colSpan={2}>
+                                  Service subtotal (phases 3–4)
+                                </td>
+                                <td className="px-2 py-2 text-right">{formatPrice(svc.scheduled)}</td>
+                                <td className="px-2 py-2 text-right">{formatPrice(svc.paid)}</td>
+                                <td className="px-2 py-2 text-right">{formatPrice(svc.due)}</td>
+                              </tr>
+                            </>
+                          )
+                        })()}
+                      </>
+                    ) : null}
                   </tbody>
                 </table>
               </div>
@@ -321,17 +463,29 @@ export default function SavedInvoiceDetailPage() {
                     <th className="px-2 py-1 text-left text-white">Date</th>
                     <th className="px-2 py-1 text-right text-white">Amount</th>
                     <th className="px-2 py-1 text-left text-white">Note</th>
+                    <th className="px-2 py-1 text-right text-white">Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {paymentRecords.length === 0 ? (
-                    <tr><td className="px-2 py-2 text-muted-foreground" colSpan={3}>No payment records yet.</td></tr>
+                    <tr><td className="px-2 py-2 text-muted-foreground" colSpan={4}>No payment records yet.</td></tr>
                   ) : (
                     paymentRecords.map((p) => (
                       <tr key={p.id} className="border-b">
                         <td className="px-2 py-1">{p.date}</td>
                         <td className="px-2 py-1 text-right">{formatPrice(Number(p.amount || 0))}</td>
                         <td className="px-2 py-1">{p.note || "—"}</td>
+                        <td className="px-2 py-1 text-right">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="destructive"
+                            disabled={saving}
+                            onClick={() => deletePaymentRecord(p.id)}
+                          >
+                            Delete
+                          </Button>
+                        </td>
                       </tr>
                     ))
                   )}

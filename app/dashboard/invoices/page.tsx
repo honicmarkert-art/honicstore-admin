@@ -444,12 +444,21 @@ export default function AdminInvoicesPage({
     if (!secs || secs.length < 3) return 0
     return getSectionSubtotal(secs[2]!)
   }, [projectTables])
-  /** One row per template; only `deadline` is stored — amount to pay is derived from material/service subtotals */
+  const effectiveSubtotal = hasProjectTables ? projectSubtotal : subtotal
+  const effectiveTaxAmount = (effectiveSubtotal * taxRate) / 100
+  const effectiveGrandTotal = Math.max(0, effectiveSubtotal + effectiveTaxAmount - discount)
+  /** Phases 1–2: half each of (grand total − Service section); phases 3–4: half each of Service section — matches Payments screen */
   const paymentScheduleDisplay = useMemo(() => {
     const raw = projectTables?.paymentSchedule || []
-    const halfMat = materialSubtotalForSchedule / 2
-    const halfSvc = serviceSubtotalForSchedule / 2
-    const payAmounts = [halfMat, halfMat, halfSvc, halfSvc]
+    const gt = Math.max(0, Math.round(effectiveGrandTotal))
+    const svcRaw = Math.max(0, Math.round(serviceSubtotalForSchedule))
+    const svcApplied = Math.min(svcRaw, gt)
+    const materialRemainder = Math.max(0, gt - svcApplied)
+    const p1 = Math.floor(materialRemainder / 2)
+    const p2 = materialRemainder - p1
+    const p3 = Math.floor(svcApplied / 2)
+    const p4 = svcApplied - p3
+    const payAmounts = [p1, p2, p3, p4]
     return PAYMENT_SCHEDULE_TEMPLATE.map((meta, i) => ({
       phase: meta.phase,
       description: meta.description,
@@ -457,7 +466,7 @@ export default function AdminInvoicesPage({
       amountToPay: payAmounts[i] ?? 0,
       deadline: raw[i]?.deadline ?? "",
     }))
-  }, [projectTables?.paymentSchedule, materialSubtotalForSchedule, serviceSubtotalForSchedule])
+  }, [projectTables?.paymentSchedule, effectiveGrandTotal, serviceSubtotalForSchedule])
   const computedPaymentDuration = useMemo(() => {
     const deadlines = paymentScheduleDisplay.map((r) => parseFlexibleDateInput(r.deadline)).filter(Boolean) as Date[]
     if (!deadlines.length) return projectTables?.paymentDeadline || ""
@@ -492,9 +501,6 @@ export default function AdminInvoicesPage({
       return { ...prev, paymentSchedule: next }
     })
   }, [hasProjectTables, projectTables?.paymentSchedule?.length])
-  const effectiveSubtotal = hasProjectTables ? projectSubtotal : subtotal
-  const effectiveTaxAmount = (effectiveSubtotal * taxRate) / 100
-  const effectiveGrandTotal = Math.max(0, effectiveSubtotal + effectiveTaxAmount - discount)
 
   const updateItem = (id: string, patch: Partial<InvoiceItem>) => {
     setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)))
@@ -816,9 +822,17 @@ export default function AdminInvoicesPage({
       .join("")
 
     const secListPdf = projectTables?.sections || []
-    const matTotalPdf = (secListPdf[0] ? getSectionSubtotal(secListPdf[0]) : 0) + (secListPdf[1] ? getSectionSubtotal(secListPdf[1]) : 0)
     const svcTotalPdf = secListPdf[2] ? getSectionSubtotal(secListPdf[2]) : 0
-    const payAmtPdf = [matTotalPdf / 2, matTotalPdf / 2, svcTotalPdf / 2, svcTotalPdf / 2]
+    const gtPdf = Math.max(0, Math.round(effectiveGrandTotal))
+    const svcPdf = Math.max(0, Math.round(svcTotalPdf))
+    const svcAppliedPdf = Math.min(svcPdf, gtPdf)
+    const matRemPdf = Math.max(0, gtPdf - svcAppliedPdf)
+    const payAmtPdf = [
+      Math.floor(matRemPdf / 2),
+      matRemPdf - Math.floor(matRemPdf / 2),
+      Math.floor(svcAppliedPdf / 2),
+      svcAppliedPdf - Math.floor(svcAppliedPdf / 2),
+    ]
     const schedRawPdf = projectTables?.paymentSchedule || []
     const paymentScheduleHtml = hasProjectTables
       ? `
@@ -857,7 +871,7 @@ export default function AdminInvoicesPage({
                 <td class="c" style="font-weight:800;">FINAL</td>
                 <td></td>
                 <td class="r" style="font-weight:800;">100%</td>
-                <td class="r" style="font-weight:800;">${currency} ${money(matTotalPdf + svcTotalPdf)}</td>
+                <td class="r" style="font-weight:800;">${currency} ${money(effectiveGrandTotal)}</td>
                 <td class="c" style="font-weight:800;">${escapeHtml(computedPaymentDuration)}</td>
               </tr>
             </tbody>

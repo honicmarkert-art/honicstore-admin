@@ -20,6 +20,7 @@ const patchSchema = z.object({
       note: z.string().optional(),
     })
     .optional(),
+  removePaymentRecordId: z.string().optional(),
   hiddenFromList: z.boolean().optional(),
 })
 
@@ -80,6 +81,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         note: patch.paymentEntry.note || "",
       })
     }
+    const nextRecords = patch.removePaymentRecordId
+      ? records.filter((r: any) => String(r?.id || "") !== String(patch.removePaymentRecordId))
+      : records
     const nextPayload = {
       ...currentPayload,
       invoiceNumber: patch.invoiceNumber ?? currentPayload.invoiceNumber,
@@ -91,7 +95,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         grandTotal: patch.grandTotal ?? currentPayload?.totals?.grandTotal ?? current?.grand_total ?? 0,
       },
       payments: {
-        records,
+        records: nextRecords,
         note: patch.paymentNote ?? payments.note ?? "",
       },
       ...(patch.hiddenFromList !== undefined ? { hiddenFromList: patch.hiddenFromList } : {}),
