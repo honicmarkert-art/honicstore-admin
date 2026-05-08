@@ -7,6 +7,7 @@ export const runtime = "nodejs"
 const INVOICES_TABLE = "invoices"
 
 const saveInvoiceSchema = z.object({
+  invoiceId: z.string().min(1).optional(),
   invoiceNumber: z.string().optional().default(""),
   dashboardScope: z.enum(["main", "project"]).optional().default("main"),
   clientName: z.string().min(1),
@@ -71,6 +72,50 @@ export async function POST(request: NextRequest) {
     }
     const invoice = parsed.data
     const clientName = invoice.clientName.trim()
+
+    if (invoice.invoiceId) {
+      const { data: existing, error: existingError } = await supabase
+        .from(INVOICES_TABLE)
+        .select("id, invoice_number, created_by")
+        .eq("id", invoice.invoiceId)
+        .single()
+      if (existingError || !existing) {
+        return NextResponse.json({ error: "Invoice not found for update", details: existingError?.message }, { status: 404 })
+      }
+
+      const now = new Date().toISOString()
+      const fixedInvoiceNumber = String(existing.invoice_number || invoice.invoiceNumber || "").trim()
+      const updateRecord = {
+        invoice_number: fixedInvoiceNumber,
+        client_name: clientName,
+        issue_date: invoice.issueDate || null,
+        due_date: invoice.dueDate || null,
+        currency: invoice.currency || "TZS",
+        subtotal: invoice.totals.subtotal,
+        tax_amount: invoice.totals.taxAmount,
+        grand_total: invoice.totals.grandTotal,
+        created_by: existing.created_by || user?.id || null,
+        payload: { ...body, dashboardScope: invoice.dashboardScope, invoiceNumber: fixedInvoiceNumber },
+        updated_at: now,
+      }
+      const updateResult = await supabase
+        .from(INVOICES_TABLE)
+        .update(updateRecord)
+        .eq("id", invoice.invoiceId)
+        .select()
+        .single()
+      if (updateResult.error) {
+        return NextResponse.json(
+          {
+            error: "Failed to update invoice",
+            details: updateResult.error.message,
+            hint: `Ensure table '${INVOICES_TABLE}' exists and matches the migration schema.`,
+          },
+          { status: 500 }
+        )
+      }
+      return NextResponse.json({ success: true, invoice: updateResult.data })
+    }
 
     let insertResult: any = null
     let lastError: any = null

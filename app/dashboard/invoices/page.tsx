@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react"
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Plus, Printer, Trash2, Sparkles, FileDown, ImagePlus, RotateCcw, Phone, Mail, MapPin, ChevronDown, ArrowLeft } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -209,11 +209,27 @@ function parseFlexibleDateInput(value: string): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
-function normalizeDdMmYyInput(value: string): string {
-  const digits = String(value || "").replace(/\D/g, "").slice(0, 6)
-  if (digits.length <= 2) return digits
-  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`
-  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4, 6)}`
+function sanitizeScheduleDateInput(value: string): string {
+  return String(value || "").replace(/[^\d/]/g, "").slice(0, 10)
+}
+
+function normalizeScheduleDateOnBlur(value: string): string {
+  const raw = sanitizeScheduleDateInput(value).trim()
+  if (!raw) return ""
+  const parts = raw.split("/").map((p) => p.trim()).filter(Boolean)
+  if (parts.length === 0) return ""
+
+  const day = String(Math.max(1, Math.min(31, Number(parts[0] || "0") || 0))).padStart(2, "0")
+  const monthPart = parts[1] || ""
+  if (!monthPart) return day
+  const month = String(Math.max(1, Math.min(12, Number(monthPart) || 0))).padStart(2, "0")
+  const yearPart = parts[2] || String(new Date().getFullYear())
+  const year =
+    yearPart.length <= 2
+      ? String(2000 + (Number(yearPart) || 0))
+      : String(Math.max(1900, Math.min(9999, Number(yearPart) || new Date().getFullYear())))
+
+  return `${day}/${month}/${year}`
 }
 
 function escapeHtml(s: string): string {
@@ -237,6 +253,8 @@ export default function AdminInvoicesPage({
 }) {
   const { themeClasses } = useTheme()
   const { toast } = useToast()
+  const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
   const logoInputRef = useRef<HTMLInputElement | null>(null)
   const signatureInputRef = useRef<HTMLInputElement | null>(null)
@@ -247,8 +265,8 @@ export default function AdminInvoicesPage({
   const [dueDate, setDueDate] = useState(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
   const [fromName, setFromName] = useState(initialValues?.fromName ?? "Honic Company Store")
   const [companyTagline, setCompanyTagline] = useState(initialValues?.companyTagline ?? "ONLINE RETAIL")
-  const [fromEmail, setFromEmail] = useState("support@honiccompanystore.com")
-  const [fromPhone, setFromPhone] = useState("+255 000 000 000")
+  const [fromEmail, setFromEmail] = useState("support@honiccompany.com")
+  const [fromPhone, setFromPhone] = useState("+255 786 957 939")
   const [companyWebsite, setCompanyWebsite] = useState(initialValues?.companyWebsite ?? "honiccompanystore.com")
   const [invoiceLogo, setInvoiceLogo] = useState<string>("")
   const [signatureImage, setSignatureImage] = useState<string>("")
@@ -265,8 +283,8 @@ export default function AdminInvoicesPage({
   )
   const [signerName, setSignerName] = useState("Authorized Signatory")
   const [signerTitle, setSignerTitle] = useState("Administrator")
-  const [footerPhone, setFooterPhone] = useState("+255 000 000 000")
-  const [footerEmail, setFooterEmail] = useState("support@honiccompanystore.com")
+  const [footerPhone, setFooterPhone] = useState("+255 786 957 939")
+  const [footerEmail, setFooterEmail] = useState("support@honiccompany.com")
   const [footerAddress, setFooterAddress] = useState("Dar es Salaam, Tanzania")
   const [currency, setCurrency] = useState("TZS")
   const [taxRate, setTaxRate] = useState(0)
@@ -580,10 +598,20 @@ export default function AdminInvoicesPage({
 
   const updatePaymentScheduleCell = (rowIndex: number, key: keyof PaymentScheduleRow, value: string) => {
     if (key !== "deadline") return
-    const normalized = normalizeDdMmYyInput(value)
+    const normalized = sanitizeScheduleDateInput(value)
     setProjectTables((prev) => {
       if (!prev?.paymentSchedule) return prev
       const paymentSchedule = prev.paymentSchedule.map((row, idx) => (idx === rowIndex ? { ...row, [key]: normalized } : row))
+      return { ...prev, paymentSchedule }
+    })
+  }
+
+  const normalizePaymentScheduleDeadlineOnBlur = (rowIndex: number) => {
+    setProjectTables((prev) => {
+      if (!prev?.paymentSchedule) return prev
+      const paymentSchedule = prev.paymentSchedule.map((row, idx) =>
+        idx === rowIndex ? { ...row, deadline: normalizeScheduleDateOnBlur(String(row.deadline || "")) } : row
+      )
       return { ...prev, paymentSchedule }
     })
   }
@@ -729,7 +757,11 @@ export default function AdminInvoicesPage({
     setDetailSectionVisible((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
-  const downloadAsPdf = () => {
+  const downloadAsPdf = async () => {
+    if (!isPreviewOnly) {
+      const saved = await saveInvoiceToDatabase({ silent: true })
+      if (!saved) return
+    }
     const blue = INV.blue
     const rowStripe = INV.rowStripe
     const rows = items
@@ -1176,13 +1208,16 @@ export default function AdminInvoicesPage({
     }, 0)
   }
 
-  const saveInvoiceToDatabase = async () => {
+  const saveInvoiceToDatabase = async (options?: { silent?: boolean }) => {
+    const silent = Boolean(options?.silent)
     if (!billToName.trim()) {
-      toast({
-        title: "Client name required",
-        description: "Please fill Invoice to (client name) before saving.",
-        variant: "destructive",
-      })
+      if (!silent) {
+        toast({
+          title: "Client name required",
+          description: "Please fill Invoice to (client name) before saving.",
+          variant: "destructive",
+        })
+      }
       return
     }
 
@@ -1190,16 +1225,19 @@ export default function AdminInvoicesPage({
       (pm) => !String(pm.accountName || "").trim() || !String(pm.bank || "").trim() || !String(pm.account || "").trim()
     )
     if (hasMissingPaymentRequired) {
-      toast({
-        title: "Payment method incomplete",
-        description: "Please fill Account name, Bank, and Account number for each payment method.",
-        variant: "destructive",
-      })
+      if (!silent) {
+        toast({
+          title: "Payment method incomplete",
+          description: "Please fill Account name, Bank, and Account number for each payment method.",
+          variant: "destructive",
+        })
+      }
       return
     }
 
     const payload = {
       invoiceNumber,
+      invoiceId: savedInvoiceId || undefined,
       dashboardScope,
       issueDate,
       dueDate,
@@ -1250,16 +1288,29 @@ export default function AdminInvoicesPage({
       if (data?.invoice?.invoice_number) {
         setInvoiceNumber(String(data.invoice.invoice_number))
       }
-      toast({
-        title: "Invoice saved",
-        description: `${String(data?.invoice?.invoice_number || invoiceNumber)} saved for ${billToName.trim()}.`,
-      })
+      const nextInvoiceId = String(data?.invoice?.id || "")
+      if (!savedInvoiceId && nextInvoiceId) {
+        const nextParams = new URLSearchParams(searchParams.toString())
+        nextParams.set("invoiceId", nextInvoiceId)
+        if (!nextParams.get("mode")) nextParams.set("mode", "edit")
+        router.replace(`${pathname}?${nextParams.toString()}`)
+      }
+      if (!silent) {
+        toast({
+          title: "Invoice saved",
+          description: `${String(data?.invoice?.invoice_number || invoiceNumber)} saved for ${billToName.trim()}.`,
+        })
+      }
+      return data?.invoice
     } catch (error) {
-      toast({
-        title: "Save failed",
-        description: error instanceof Error ? error.message : "Could not save invoice.",
-        variant: "destructive",
-      })
+      if (!silent) {
+        toast({
+          title: "Save failed",
+          description: error instanceof Error ? error.message : "Could not save invoice.",
+          variant: "destructive",
+        })
+      }
+      return null
     } finally {
       setIsSavingInvoice(false)
     }
@@ -1537,7 +1588,7 @@ export default function AdminInvoicesPage({
                   <div className="rounded-lg border border-border/80 p-3">
                     <p className="mb-1 text-xs font-extrabold uppercase tracking-wide text-slate-700">Payment schedule</p>
                     <p className={cn("mb-3 text-[11px]", themeClasses.textNeutralSecondary)}>
-                      Amounts are calculated (50% of Electrical+Prototype, then 50% of Service). Edit only deadlines here.
+                      Phases 1-2 use half of (invoice total - service), phases 3-4 use half of service. Edit deadlines here.
                     </p>
                     <div className="space-y-2">
                       {paymentScheduleDisplay.map((row, rowIndex) => (
@@ -1554,8 +1605,9 @@ export default function AdminInvoicesPage({
                           <Input
                             value={row.deadline}
                             onChange={(e) => updatePaymentScheduleCell(rowIndex, "deadline", e.target.value)}
-                            placeholder="Deadline (DD/MM/YY)"
-                            maxLength={8}
+                            onBlur={() => normalizePaymentScheduleDeadlineOnBlur(rowIndex)}
+                            placeholder="Deadline (DD/MM/YYYY)"
+                            maxLength={10}
                             className="h-8 text-xs"
                           />
                         </div>
