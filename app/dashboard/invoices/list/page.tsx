@@ -210,7 +210,7 @@ export default function InvoiceClientsListPage({
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Type client name..."
+            placeholder="Search client name..."
           />
         </CardContent>
       </Card>
