@@ -38,12 +38,20 @@ export async function GET(request: NextRequest) {
     const brand = searchParams.get('brand')
     const search = searchParams.get('search')
     const inStock = searchParams.get('inStock') === 'true'
+    const adminReviewCorrectedParam = searchParams.get('admin_review_corrected')
+    const filterReviewCorrected =
+      adminReviewCorrectedParam === 'true' || adminReviewCorrectedParam === 'false' ? adminReviewCorrectedParam === 'true' : null
+
+    if (filterReviewCorrected !== null) {
+      const { error: authError } = await validateAdminAccess()
+      if (authError) return authError
+    }
 
     // Build query
     let query = supabase
       .from('products')
       .select(minimal 
-        ? 'id, name, price, original_price, image, category, brand, rating, reviews, in_stock, stock_quantity, free_delivery, same_day_delivery, import_china, is_new, updated_at, variant_config, sold_count, supplier_verified, product_variants (*)'
+        ? 'id, name, price, original_price, image, category, brand, rating, reviews, in_stock, stock_quantity, free_delivery, same_day_delivery, import_china, is_new, updated_at, variant_config, sold_count, supplier_verified, admin_review_corrected, product_variants (*)'
         : '*'
       )
       .eq('is_hidden', false)
@@ -63,6 +71,9 @@ export async function GET(request: NextRequest) {
     if (search && search.trim()) {
       const searchTerm = search.trim().toLowerCase()
       query = query.or(`name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%,brand.ilike.%${searchTerm}%`)
+    }
+    if (filterReviewCorrected !== null) {
+      query = query.eq('admin_review_corrected', filterReviewCorrected)
     }
 
     const { data: products, error } = await query
@@ -87,6 +98,9 @@ export async function GET(request: NextRequest) {
     if (search && search.trim()) {
       const searchTerm = search.trim().toLowerCase()
       countQuery = countQuery.or(`name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%,brand.ilike.%${searchTerm}%`)
+    }
+    if (filterReviewCorrected !== null) {
+      countQuery = countQuery.eq('admin_review_corrected', filterReviewCorrected)
     }
 
     const { count } = await countQuery

@@ -184,6 +184,36 @@ function AdminProductsContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const editIdParam = searchParams.get("editId")
+
+  useEffect(() => {
+    if (!editIdParam || isInitialLoading) return
+    const id = Number(editIdParam)
+    if (!Number.isFinite(id) || id <= 0) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const refreshed = await fetchFullProductDetails(id)
+        if (cancelled) return
+        if (refreshed) {
+          setEditingProduct(refreshed)
+          setIsAddDialogOpen(true)
+        } else {
+          toast({ title: "Product not found", description: `No product with id ${id}.`, variant: "destructive" })
+        }
+      } finally {
+        if (cancelled) return
+        const q = new URLSearchParams(Array.from(searchParams.entries()))
+        q.delete("editId")
+        const qs = q.toString()
+        router.replace(`/dashboard/products${qs ? `?${qs}` : ""}`)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [editIdParam, isInitialLoading, fetchFullProductDetails, router, searchParams, toast])
+
   const updateQuery = (next: { q?: string; main?: string; sub?: string; brand?: string }) => {
     const q = new URLSearchParams(Array.from(searchParams.entries()))
     if (next.q !== undefined) {

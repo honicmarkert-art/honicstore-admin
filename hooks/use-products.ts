@@ -40,6 +40,8 @@ export interface Product {
   views?: number
   video?: string
   view360?: string
+  /** Admin review queue: product marked corrected (requires DB column admin_review_corrected). */
+  adminReviewCorrected?: boolean
 }
 
 export interface ProductVariant {

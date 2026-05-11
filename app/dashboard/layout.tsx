@@ -25,6 +25,8 @@ import {
   Wallet,
   AlertTriangle,
   BarChart3,
+  CheckSquare,
+  Square,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -46,6 +48,8 @@ const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Products", href: "/dashboard/products", icon: Package },
   { name: "Out of Stock", href: "/dashboard/products/out-of-stock", icon: AlertTriangle },
+  { name: "Review: Not corrected", href: "/dashboard/products/not-corrected", icon: Square },
+  { name: "Review: Corrected", href: "/dashboard/products/corrected", icon: CheckSquare },
   { name: "Orders", href: "/dashboard/orders", icon: ShoppingCart },
   { name: "Confirmed Orders", href: "/dashboard/confirmed-orders", icon: ShoppingCart },
   { name: "Suppliers", href: "/dashboard/suppliers", icon: Building2 },

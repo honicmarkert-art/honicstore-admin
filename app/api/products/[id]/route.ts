@@ -90,6 +90,9 @@ export async function PUT(
     if (updates.importChina !== undefined) supabaseUpdates.import_china = updates.importChina
     if (updates.specificationImages !== undefined) supabaseUpdates.specification_images = updates.specificationImages
     if (updates.variantConfig !== undefined) supabaseUpdates.variant_config = updates.variantConfig
+    if ((updates as any).adminReviewCorrected !== undefined) {
+      supabaseUpdates.admin_review_corrected = Boolean((updates as any).adminReviewCorrected)
+    }
 
     const { data: product, error } = await supabase
       .from('products')

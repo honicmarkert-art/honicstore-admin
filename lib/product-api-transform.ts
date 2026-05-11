@@ -91,6 +91,7 @@ export function transformProduct(product: any) {
     }),
     variantConfig: product.variant_config || {},
     variantImages,
-    specificationImages
+    specificationImages,
+    adminReviewCorrected: Boolean(product.admin_review_corrected),
   }
 }
