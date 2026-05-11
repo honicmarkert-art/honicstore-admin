@@ -240,6 +240,41 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;")
 }
 
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+function isMoneyField(key: string): boolean {
+  return /price|amount|total|subtotal|pay/i.test(key)
+}
+
+/** Strip leading currency tokens from pasted/saved cell text; body cells show numbers only. */
+function stripLeadingCurrencyFromCell(raw: string, currency: string): string {
+  let s = String(raw ?? "").trim()
+  const cur = currency.trim()
+  const variants = Array.from(new Set([cur, "TZS", "TSh", "USD"].filter(Boolean)))
+  for (const v of variants) {
+    const re = new RegExp(`^${escapeRegExp(v)}\\s*:?\\s*`, "i")
+    s = s.replace(re, "").trim()
+  }
+  return s
+}
+
+function displayProjectCellValue(raw: string, colKey: string, currency: string): string {
+  if (!isMoneyField(colKey)) return String(raw ?? "")
+  return stripLeadingCurrencyFromCell(raw, currency)
+}
+
+/** Currency once in the header; skip if label already has a parenthesized currency code. */
+function columnHeaderLabel(col: ExtraTableColumn, currency: string): string {
+  const label = String(col.label || "").trim()
+  if (!isMoneyField(col.key)) return label
+  const cur = currency.trim()
+  if (!cur) return label
+  if (/\([A-Z]{2,4}\)/i.test(label)) return label
+  return `${label} (${cur})`
+}
+
 export default function AdminInvoicesPage({
   initialValues,
   extraTables,
@@ -575,8 +610,6 @@ export default function AdminInvoicesPage({
     })
   }
 
-  const isMoneyField = (key: string) => /price|amount|total|subtotal|pay/i.test(key)
-
   const updateProjectSectionCell = (sectionIndex: number, rowIndex: number, key: string, value: string) => {
     setProjectTables((prev) => {
       if (!prev?.sections) return prev
@@ -776,8 +809,8 @@ export default function AdminInvoicesPage({
             <td style="font-size:12px;text-align:center;color:#111;">${index + 1}</td>
             <td style="font-size:12px;color:#111;">${escapeHtml(item.description || "—")}</td>
             <td style="font-size:12px;text-align:right;color:#111;">${item.quantity}</td>
-            <td style="font-size:12px;text-align:right;color:#111;">${currency} ${money(item.unitPrice)}</td>
-            <td style="font-size:12px;text-align:right;font-weight:600;color:#111;">${currency} ${money(rowTotal)}</td>
+            <td style="font-size:12px;text-align:right;color:#111;">${money(item.unitPrice)}</td>
+            <td style="font-size:12px;text-align:right;font-weight:600;color:#111;">${money(rowTotal)}</td>
           </tr>
         `
       })
@@ -819,7 +852,7 @@ export default function AdminInvoicesPage({
             (col) =>
               `<th class="${
                 col.align === "right" ? "r" : col.align === "center" ? "c" : ""
-              }" style="width:${columnWidthForKey(col.key)};">${escapeHtml(col.label)}</th>`
+              }" style="width:${columnWidthForKey(col.key)};">${escapeHtml(columnHeaderLabel(col, currency))}</th>`
           )
           .join("")
         const colgroup = `<colgroup>${section.columns
@@ -829,7 +862,7 @@ export default function AdminInvoicesPage({
           .map((row, rowIndex) => {
             const cells = section.columns
               .map((col) => {
-                const value = row[col.key] ?? ""
+                const value = displayProjectCellValue(row[col.key] ?? "", col.key, currency)
                 const klass = col.align === "right" ? "r" : col.align === "center" ? "c" : ""
                 const rowRed = isPrototype && isPrototypeRowHighlighted(row)
                 return `<td class="${klass}" style="${rowRed ? "color:#b91c1c;" : ""}">${escapeHtml(value)}</td>`
@@ -839,7 +872,7 @@ export default function AdminInvoicesPage({
           })
           .join("")
         const computedSubtotal = getSectionSubtotal(section)
-        const subtotalRow = `<tr><td colspan="${Math.max(1, section.columns.length - 1)}" style="text-align:right;font-weight:800;">SUBTOTAL</td><td class="r" style="font-weight:800;">${currency} ${money(computedSubtotal)}</td></tr>`
+        const subtotalRow = `<tr><td colspan="${Math.max(1, section.columns.length - 1)}" style="text-align:right;font-weight:800;">SUBTOTAL</td><td class="r" style="font-weight:800;">${money(computedSubtotal)}</td></tr>`
         return `
           <div class="extra-block">
             <p class="extra-title">${escapeHtml(section.title)}</p>
@@ -883,7 +916,7 @@ export default function AdminInvoicesPage({
                 <th class="c">Phase</th>
                 <th>Description</th>
                 <th class="r">Amount</th>
-                <th class="r">Amount to pay</th>
+                <th class="r">Amount to pay (${escapeHtml(currency)})</th>
                 <th class="c">Deadline</th>
               </tr>
             </thead>
@@ -894,7 +927,7 @@ export default function AdminInvoicesPage({
                   <td class="c">${escapeHtml(meta.phase)}</td>
                   <td>${escapeHtml(meta.description)}</td>
                   <td class="r">${escapeHtml(meta.amount)}</td>
-                  <td class="r">${currency} ${money(payAmtPdf[idx] ?? 0)}</td>
+                  <td class="r">${money(payAmtPdf[idx] ?? 0)}</td>
                   <td class="c">${escapeHtml(schedRawPdf[idx]?.deadline || "")}</td>
                 </tr>
               `
@@ -903,7 +936,7 @@ export default function AdminInvoicesPage({
                 <td class="c" style="font-weight:800;">FINAL</td>
                 <td></td>
                 <td class="r" style="font-weight:800;">100%</td>
-                <td class="r" style="font-weight:800;">${currency} ${money(effectiveGrandTotal)}</td>
+                <td class="r" style="font-weight:800;">${money(effectiveGrandTotal)}</td>
                 <td class="c" style="font-weight:800;">${escapeHtml(computedPaymentDuration)}</td>
               </tr>
             </tbody>
@@ -923,8 +956,9 @@ export default function AdminInvoicesPage({
       </div>
     `
 
-    const signatureBelowTitleHtml = signatureImage
-      ? `<p class="sign-sig"><img src="${signatureImage}" alt="" /></p>`
+    /** Bold line under italic label shows signature image only (no duplicate text). */
+    const signBoldSignatureHtml = signatureImage
+      ? `<p class="sign-b"><img src="${signatureImage}" alt="" /></p>`
       : ""
     const stampBelowSignatureHtml = stampImage
       ? `<p class="sign-stamp"><img src="${stampImage}" alt="" /></p>`
@@ -959,8 +993,6 @@ export default function AdminInvoicesPage({
               print-color-adjust: exact;
             }
             .page-inner { position: relative; z-index: 1; }
-            .sign-sig { margin: 10px 0 0; padding: 0; text-align: right; }
-            .sign-sig img { max-height: 64px; max-width: 170px; object-fit: contain; vertical-align: bottom; }
             .sign-stamp { margin: 8px 0 0; padding: 0; text-align: right; }
             .sign-stamp img { max-height: 140px; max-width: 280px; object-fit: contain; vertical-align: bottom; opacity: 0.95; }
             .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
@@ -972,7 +1004,6 @@ export default function AdminInvoicesPage({
             /* border-top prints reliably; thin background divs often disappear in “Save as PDF” */
             .line-bg { width: 100%; height: 0; margin: 0; padding: 0; border: 0; border-top: 1px solid #d1d5db; }
             .line-accent { position: absolute; left: 0; top: 0; width: 96px; height: 0; border: 0; border-top: 3px solid ${blue}; }
-            .url-row { text-align: right; font-size: 9px; font-weight: 600; color: #475569; margin-top: 6px; letter-spacing: 0.02em; text-transform: lowercase; opacity: 1; }
             .meta { display: flex; justify-content: space-between; margin-top: 24px; gap: 24px; }
             .to-label { font-size: 12px; font-weight: 700; color: #111; margin-bottom: 6px; }
             .to-name { font-size: 15px; font-weight: 800; color: #111; margin: 0 0 4px; }
@@ -1011,7 +1042,8 @@ export default function AdminInvoicesPage({
             .terms h4 { font-size: 12px; font-weight: 800; color: #111; margin: 10px 0 4px; }
             .sign { text-align: right; min-width: 150px; max-width: 170px; }
             .sign-name { font-size: 18px; font-family: Georgia, 'Times New Roman', serif; font-style: italic; color: #1f2937; }
-            .sign-b { font-size: 12px; font-weight: 800; color: #111; margin-top: 8px; }
+            .sign-b { margin: 8px 0 0; padding: 0; text-align: right; }
+            .sign-b img { max-height: 64px; max-width: 170px; object-fit: contain; vertical-align: bottom; display: inline-block; }
             .sign-t { font-size: 11px; color: #6b7280; }
             .bar { position: relative; margin-top: 24px; min-height: 1px; }
             .bar .line-bg { width: 100%; height: 0; border: 0; border-top: 1px solid #d1d5db; }
@@ -1062,7 +1094,6 @@ export default function AdminInvoicesPage({
               <div class="line-bg"></div>
               <div class="line-accent"></div>
             </div>
-            <div class="url-row">${escapeHtml(websiteDisplay)}</div>
             <div class="meta">
               <div>
                 <p class="to-label">Invoice to:</p>
@@ -1078,14 +1109,21 @@ export default function AdminInvoicesPage({
             ${
               hasProjectTables
                 ? ""
-                : `<table>
+                : `<table style="table-layout:fixed;">
+              <colgroup>
+                <col style="width:${columnWidthForKey("sn")};" />
+                <col style="width:${columnWidthForKey("item")};" />
+                <col style="width:${columnWidthForKey("qty")};" />
+                <col style="width:${columnWidthForKey("unitPrice")};" />
+                <col style="width:${columnWidthForKey("totalPrice")};" />
+              </colgroup>
               <thead>
                 <tr>
-                  <th class="c" style="width:40px;">NO</th>
+                  <th class="c">NO</th>
                   <th>DESCRIPTION</th>
-                  <th class="r" style="width:50px;">QTY</th>
-                  <th class="r" style="width:100px;">PRICE</th>
-                  <th class="r" style="width:100px;">TOTAL</th>
+                  <th class="r">QTY</th>
+                  <th class="r">PRICE (${escapeHtml(currency)})</th>
+                  <th class="r">TOTAL (${escapeHtml(currency)})</th>
                 </tr>
               </thead>
               <tbody>${rows}</tbody>
@@ -1110,9 +1148,8 @@ export default function AdminInvoicesPage({
               </div>
               <div class="sign">
                 <p class="sign-name">${escapeHtml(signerName)}</p>
-                <p class="sign-b">${escapeHtml(signerName)}</p>
+                ${signBoldSignatureHtml}
                 <p class="sign-t">${escapeHtml(signerTitle)}</p>
-                ${signatureBelowTitleHtml}
                 ${stampBelowSignatureHtml}
               </div>
             </div>
@@ -1599,9 +1636,7 @@ export default function AdminInvoicesPage({
                           <p className="text-xs font-bold text-slate-800">{row.phase}</p>
                           <p className="text-xs text-slate-600 md:pr-1">{row.description}</p>
                           <p className="text-right text-xs font-semibold text-slate-800">{row.amount}</p>
-                          <p className="text-right text-xs font-semibold tabular-nums text-slate-900">
-                            {currency} {money(row.amountToPay)}
-                          </p>
+                          <p className="text-right text-xs font-semibold tabular-nums text-slate-900">{money(row.amountToPay)}</p>
                           <Input
                             value={row.deadline}
                             onChange={(e) => updatePaymentScheduleCell(rowIndex, "deadline", e.target.value)}
@@ -1667,7 +1702,7 @@ export default function AdminInvoicesPage({
                       <Trash2 className="h-4 w-4" />
                     </Button>
                     <p className="col-span-12 text-right text-xs font-medium tabular-nums text-muted-foreground">
-                      Line total: {currency} {money(item.quantity * item.unitPrice)}
+                      Line total: {money(item.quantity * item.unitPrice)}
                     </p>
                   </div>
                 ))}
@@ -1815,7 +1850,9 @@ export default function AdminInvoicesPage({
               {detailSectionVisible.signer ? (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>Signer / authorized name</label>
+                <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>
+                  Signer label (italic line, e.g. Authorized Signatory)
+                </label>
                 <Input value={signerName} onChange={(e) => setSignerName(e.target.value)} />
               </div>
               <div>
@@ -1987,42 +2024,60 @@ export default function AdminInvoicesPage({
               </div>
 
               {!hasProjectTables ? (
-                <div className="mt-5 overflow-x-auto">
-                  <div className="min-w-[520px]">
-                    <div
-                      className="grid grid-cols-[44px_minmax(0,1fr)_52px_96px_96px] gap-0 text-[10px] font-bold uppercase tracking-[0.08em] text-white"
-                      style={{ background: INV.blue }}
-                    >
-                      <div className="px-2.5 py-2.5 text-center sm:px-3.5">NO</div>
-                      <div className="px-2.5 py-2.5 sm:px-3.5">DESCRIPTION</div>
-                      <div className="px-2.5 py-2.5 text-right sm:px-3.5">QTY</div>
-                      <div className="px-2.5 py-2.5 text-right sm:px-3.5">PRICE</div>
-                      <div className="px-2.5 py-2.5 text-right sm:px-3.5">TOTAL</div>
-                    </div>
-                    {items.map((item, index) => {
-                      const rowTotal = item.quantity * item.unitPrice
-                      const stripe = index % 2 === 1
-                      return (
-                        <div
-                          key={item.id}
-                          className="grid grid-cols-[44px_minmax(0,1fr)_52px_96px_96px] border-b border-slate-100"
-                          style={{ background: stripe ? INV.rowStripe : "#fff" }}
-                        >
-                          <div className="px-2.5 py-2.5 text-center text-xs text-slate-800 sm:px-3.5">{index + 1}</div>
-                          <div className="min-w-0 px-2.5 py-2.5 text-sm font-medium text-slate-900 sm:px-3.5">
-                            {item.description || "—"}
-                          </div>
-                          <div className="px-2.5 py-2.5 text-right text-sm text-slate-700 sm:px-3.5">{item.quantity}</div>
-                          <div className="px-2.5 py-2.5 text-right text-sm text-slate-700 sm:px-3.5">
-                            {currency} {money(item.unitPrice)}
-                          </div>
-                          <div className="px-2.5 py-2.5 text-right text-sm font-semibold text-slate-900 sm:px-3.5">
-                            {currency} {money(rowTotal)}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
+                <div className="mt-5 overflow-x-auto border border-slate-300">
+                  <table className="w-full table-fixed border-collapse">
+                    <colgroup>
+                      <col style={{ width: columnWidthForKey("sn") }} />
+                      <col style={{ width: columnWidthForKey("item") }} />
+                      <col style={{ width: columnWidthForKey("qty") }} />
+                      <col style={{ width: columnWidthForKey("unitPrice") }} />
+                      <col style={{ width: columnWidthForKey("totalPrice") }} />
+                    </colgroup>
+                    <thead>
+                      <tr style={{ background: INV.blue }}>
+                        <th className="border border-blue-700 px-2.5 py-2.5 text-center text-[10px] font-bold uppercase tracking-[0.08em] text-white sm:px-3.5">
+                          NO
+                        </th>
+                        <th className="border border-blue-700 px-2.5 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em] text-white sm:px-3.5">
+                          DESCRIPTION
+                        </th>
+                        <th className="border border-blue-700 px-2.5 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.08em] text-white sm:px-3.5">
+                          QTY
+                        </th>
+                        <th className="border border-blue-700 px-2.5 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.08em] text-white sm:px-3.5">
+                          PRICE ({currency})
+                        </th>
+                        <th className="border border-blue-700 px-2.5 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.08em] text-white sm:px-3.5">
+                          TOTAL ({currency})
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((item, index) => {
+                        const rowTotal = item.quantity * item.unitPrice
+                        const stripe = index % 2 === 1
+                        return (
+                          <tr key={item.id} style={{ background: stripe ? INV.rowStripe : "#fff" }}>
+                            <td className="border border-slate-200 px-2.5 py-2.5 text-center text-xs text-slate-800 sm:px-3.5">
+                              {index + 1}
+                            </td>
+                            <td className="border border-slate-200 px-2.5 py-2.5 text-sm font-medium text-slate-900 sm:px-3.5">
+                              {item.description || "—"}
+                            </td>
+                            <td className="border border-slate-200 px-2.5 py-2.5 text-right text-sm text-slate-700 sm:px-3.5">
+                              {item.quantity}
+                            </td>
+                            <td className="border border-slate-200 px-2.5 py-2.5 text-right text-sm tabular-nums text-slate-700 sm:px-3.5">
+                              {money(item.unitPrice)}
+                            </td>
+                            <td className="border border-slate-200 px-2.5 py-2.5 text-right text-sm font-semibold tabular-nums text-slate-900 sm:px-3.5">
+                              {money(rowTotal)}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               ) : null}
 
@@ -2048,7 +2103,7 @@ export default function AdminInvoicesPage({
                                 col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"
                               )}
                             >
-                              {col.label}
+                              {columnHeaderLabel(col, currency)}
                             </th>
                           ))}
                         </tr>
@@ -2065,7 +2120,7 @@ export default function AdminInvoicesPage({
                                   col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"
                                 )}
                               >
-                                {row[col.key] || ""}
+                                {displayProjectCellValue(row[col.key] || "", col.key, currency)}
                               </td>
                             ))}
                           </tr>
@@ -2074,8 +2129,8 @@ export default function AdminInvoicesPage({
                           <td colSpan={Math.max(1, section.columns.length - 1)} className="border border-slate-200 px-3 py-1.5 text-right text-xs font-extrabold text-slate-900">
                             SUBTOTAL
                           </td>
-                          <td className="border border-slate-200 px-3 py-1.5 text-right text-xs font-extrabold text-slate-900">
-                            {currency} {money(getSectionSubtotal(section))}
+                          <td className="border border-slate-200 px-3 py-1.5 text-right text-xs font-extrabold tabular-nums text-slate-900">
+                            {money(getSectionSubtotal(section))}
                           </td>
                         </tr>
                       </tbody>
@@ -2128,7 +2183,9 @@ export default function AdminInvoicesPage({
                           <th className="border border-blue-700 px-3 py-1.5 text-center text-[10px] font-bold uppercase tracking-[0.07em] text-white">Phase</th>
                           <th className="border border-blue-700 px-3 py-1.5 text-left text-[10px] font-bold uppercase tracking-[0.07em] text-white">Description</th>
                           <th className="border border-blue-700 px-3 py-1.5 text-right text-[10px] font-bold uppercase tracking-[0.07em] text-white">Amount</th>
-                          <th className="border border-blue-700 px-3 py-1.5 text-right text-[10px] font-bold uppercase tracking-[0.07em] text-white">Amount to pay</th>
+                          <th className="border border-blue-700 px-3 py-1.5 text-right text-[10px] font-bold uppercase tracking-[0.07em] text-white">
+                            Amount to pay ({currency})
+                          </th>
                           <th className="border border-blue-700 px-3 py-1.5 text-center text-[10px] font-bold uppercase tracking-[0.07em] text-white">Deadline</th>
                         </tr>
                       </thead>
@@ -2139,7 +2196,7 @@ export default function AdminInvoicesPage({
                             <td className="border border-slate-200 px-3 py-1.5 text-xs text-slate-800">{row.description}</td>
                             <td className="border border-slate-200 px-3 py-1.5 text-right text-xs text-slate-800">{row.amount}</td>
                             <td className="border border-slate-200 px-3 py-1.5 text-right text-xs tabular-nums text-slate-800">
-                              {currency} {money(row.amountToPay)}
+                              {money(row.amountToPay)}
                             </td>
                             <td className="border border-slate-200 px-3 py-1.5 text-center text-xs text-slate-800">{row.deadline}</td>
                           </tr>
@@ -2149,7 +2206,7 @@ export default function AdminInvoicesPage({
                           <td className="border border-slate-200 px-3 py-1.5 text-xs" />
                           <td className="border border-slate-200 px-3 py-1.5 text-right text-xs font-extrabold text-slate-900">100%</td>
                           <td className="border border-slate-200 px-3 py-1.5 text-right text-xs font-extrabold tabular-nums text-slate-900">
-                            {currency} {money(materialSubtotalForSchedule + serviceSubtotalForSchedule)}
+                            {money(materialSubtotalForSchedule + serviceSubtotalForSchedule)}
                           </td>
                           <td className="border border-slate-200 px-3 py-1.5 text-center text-xs font-extrabold text-slate-900">
                             {computedPaymentDuration}
@@ -2216,15 +2273,12 @@ export default function AdminInvoicesPage({
                   >
                     {signerName}
                   </p>
-                  <p className="mt-2 text-sm font-extrabold text-slate-900">{signerName}</p>
-                  <p className="text-xs text-slate-500">{signerTitle}</p>
                   {signatureImage ? (
-                    <img
-                      src={signatureImage}
-                      alt=""
-                      className="ml-auto mt-2 block h-16 w-auto max-w-[170px] object-contain"
-                    />
+                    <div className="mt-2 flex justify-end">
+                      <img src={signatureImage} alt="" className="block h-16 w-auto max-w-[170px] object-contain" />
+                    </div>
                   ) : null}
+                  <p className="mt-2 text-xs text-slate-500">{signerTitle}</p>
                   {stampImage ? (
                     <img
                       src={stampImage}
