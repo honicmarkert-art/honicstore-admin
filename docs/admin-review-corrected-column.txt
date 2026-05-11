@@ -1,0 +1,11 @@
+-- Run once in Supabase SQL editor (or psql) before using Review pages.
+-- Repository ignores *.sql; this file uses .txt so it can be versioned.
+
+ALTER TABLE products
+  ADD COLUMN IF NOT EXISTS admin_review_corrected boolean NOT NULL DEFAULT false;
+
+COMMENT ON COLUMN products.admin_review_corrected IS 'Admin-only: product passed manual review (shown on /dashboard/products/corrected).';
+
+CREATE INDEX IF NOT EXISTS idx_products_admin_review_corrected
+  ON products (admin_review_corrected)
+  WHERE is_hidden = false;
