@@ -78,15 +78,50 @@ type DetailSectionKey =
 
 type DocumentKind = "invoice" | "quotation"
 
+const DOCUMENT_DEFAULTS: Record<
+  DocumentKind,
+  { thankYou: string; terms: string; disclaimer: string }
+> = {
+  invoice: {
+    thankYou: "Thank you for your business.",
+    terms: "Payment is due within 7 days. Please use the invoice number as your payment reference.",
+    disclaimer: "",
+  },
+  quotation: {
+    thankYou: "Thank you for considering our proposal.",
+    terms:
+      "This quotation is valid until the date shown above. Prices are estimates and subject to availability. Written acceptance is required before work or supply begins.",
+    disclaimer:
+      "This document is a quotation only — not a tax invoice. No payment is due until a formal invoice is issued upon acceptance.",
+  },
+}
+
 function documentKindLabels(kind: DocumentKind) {
   const isQuote = kind === "quotation"
+  const defs = DOCUMENT_DEFAULTS[kind]
   return {
     title: isQuote ? "QUOTATION" : "INVOICE",
+    subtitle: isQuote ? "Price estimate — not a tax invoice" : "",
     numberLabel: isQuote ? "Quotation no :" : "Invoice no :",
-    billToLabel: isQuote ? "Quotation to:" : "Invoice to:",
+    billToLabel: isQuote ? "Quotation for:" : "Invoice to:",
     dueLabel: isQuote ? "Valid until:" : "Due:",
+    issueDateLabel: isQuote ? "Quotation date:" : "Issue date:",
     metaSection: isQuote ? "Quotation meta" : "Invoice meta",
     numberField: isQuote ? "Quotation #" : "Invoice #",
+    grandTotalLabel: isQuote ? "QUOTED TOTAL :" : "GRAND TOTAL :",
+    termsHeading: isQuote ? "Quotation terms:" : "Term and Conditions:",
+    thankYouDefault: defs.thankYou,
+    termsDefault: defs.terms,
+    disclaimerDefault: defs.disclaimer,
+    showPaymentSchedule: !isQuote,
+    showPaymentMethods: !isQuote,
+    showStamp: !isQuote,
+    saveButtonLabel: isQuote ? "Save Quotation" : "Save Invoice",
+    termsSectionLabel: isQuote ? "Quotation terms" : "Terms",
+    thankYouFieldLabel: isQuote ? "Closing line" : "Thank you line",
+    termsFieldLabel: isQuote ? "Quotation terms & conditions" : "Terms and conditions",
+    acceptanceHeading: isQuote ? "Client acceptance" : "",
+    preparedByLabel: isQuote ? "Prepared by:" : "",
   }
 }
 
@@ -375,6 +410,8 @@ export default function AdminInvoicesPage({
   const [taxRate, setTaxRate] = useState(0)
   const [discount, setDiscount] = useState(0)
   const [thankYouLine, setThankYouLine] = useState("Thank you for your business.")
+  const [quotationScope, setQuotationScope] = useState("")
+  const [quotationDisclaimer, setQuotationDisclaimer] = useState(DOCUMENT_DEFAULTS.quotation.disclaimer)
   const [items, setItems] = useState<InvoiceItem[]>([
     { id: "1", description: "Product or service", quantity: 1, unitPrice: 0 },
   ])
@@ -436,6 +473,8 @@ export default function AdminInvoicesPage({
         setFooterAddress(String(p.footerAddress || footerAddress))
         setThankYouLine(String(p.thankYouLine || thankYouLine))
         setTermsText(String(p.termsText || termsText))
+        setQuotationScope(String(p.quotationScope || ""))
+        setQuotationDisclaimer(String(p.quotationDisclaimer || DOCUMENT_DEFAULTS.quotation.disclaimer))
         if (typeof p.invoiceLogo === "string" && p.invoiceLogo) setInvoiceLogo(p.invoiceLogo)
         if (typeof p.signatureImage === "string" && p.signatureImage) setSignatureImage(p.signatureImage)
         if (typeof p.stampImage === "string" && p.stampImage) setStampImage(p.stampImage)
@@ -523,7 +562,22 @@ export default function AdminInvoicesPage({
 
   const websiteDisplay = companyWebsite.replace(/^https?:\/\//i, "").toLowerCase()
   const docLabels = useMemo(() => documentKindLabels(documentKind), [documentKind])
+  const isQuotation = documentKind === "quotation"
+  const effectiveThankYou = thankYouLine.trim() || docLabels.thankYouDefault
+  const effectiveTerms = termsText.trim() || docLabels.termsDefault
+  const effectiveDisclaimer = quotationDisclaimer.trim() || docLabels.disclaimerDefault
   const hasProjectTables = Boolean(projectTables?.sections?.length || projectTables?.paymentSchedule?.length)
+
+  const switchDocumentKind = (kind: DocumentKind) => {
+    setDocumentKind((prev) => {
+      if (prev === kind) return prev
+      const fromDefs = DOCUMENT_DEFAULTS[prev]
+      const toDefs = DOCUMENT_DEFAULTS[kind]
+      setThankYouLine((t) => (t.trim() === fromDefs.thankYou || !t.trim() ? toDefs.thankYou : t))
+      setTermsText((t) => (t.trim() === fromDefs.terms || !t.trim() ? toDefs.terms : t))
+      return kind
+    })
+  }
   const getSectionSubtotal = (section: ExtraTableSection): number => {
     const totalKey =
       section.columns.find((col) => /total/i.test(col.key))?.key ??
@@ -954,7 +1008,7 @@ export default function AdminInvoicesPage({
       svcAppliedPdf - Math.floor(svcAppliedPdf / 2),
     ]
     const schedRawPdf = projectTables?.paymentSchedule || []
-    const paymentScheduleHtml = hasProjectTables
+    const paymentScheduleHtml = hasProjectTables && docLabels.showPaymentSchedule
       ? `
         <div class="extra-block">
           <p class="extra-title">PAYMENT SCHEDULE</p>
@@ -1015,8 +1069,32 @@ export default function AdminInvoicesPage({
     const signBoldSignatureHtml = signatureImage
       ? `<p class="sign-b"><img src="${signatureImage}" alt="" /></p>`
       : ""
-    const stampBelowSignatureHtml = stampImage
-      ? `<p class="sign-stamp"><img src="${stampImage}" alt="" /></p>`
+    const stampBelowSignatureHtml =
+      docLabels.showStamp && stampImage
+        ? `<p class="sign-stamp"><img src="${stampImage}" alt="" /></p>`
+        : ""
+    const quoteScopeHtml =
+      isQuotation && quotationScope.trim()
+        ? `<p class="quote-scope">${escapeHtml(quotationScope.trim())}</p>`
+        : ""
+    const quoteBannerHtml =
+      isQuotation && effectiveDisclaimer
+        ? `<div class="quote-banner">${escapeHtml(effectiveDisclaimer)}</div>`
+        : ""
+    const quotePreparedHtml = isQuotation
+      ? `<p class="quote-prepared">${escapeHtml(docLabels.preparedByLabel)} ${escapeHtml(fromName || "—")} · ${escapeHtml(fromEmail || "—")} · ${escapeHtml(fromPhone || "—")}</p>`
+      : ""
+    const quoteAcceptHtml = isQuotation
+      ? `<div class="quote-accept">
+          <p class="quote-accept-title">${escapeHtml(docLabels.acceptanceHeading)}</p>
+          <p class="quote-accept-lbl">Client name</p>
+          <div class="quote-accept-line"></div>
+          <p class="quote-accept-lbl">Signature &amp; date</p>
+          <div class="quote-accept-line"></div>
+        </div>`
+      : ""
+    const quoteSubtitleHtml = isQuotation && docLabels.subtitle
+      ? `<div class="quote-sub">${escapeHtml(docLabels.subtitle)}</div>`
       : ""
 
     const buildInvoiceHtml = () => `
@@ -1106,6 +1184,14 @@ export default function AdminInvoicesPage({
             .icons { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-top: 12px; font-size: 11px; color: #4b5563; }
             .ic { display: flex; align-items: center; gap: 8px; }
             .ic svg { display: none; }
+            .quote-sub { font-size: 9px; font-weight: 700; color: #64748b; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 5px; text-align: right; }
+            .quote-banner { margin-top: 14px; padding: 10px 14px; background: #fffbeb; border: 1px solid #fcd34d; border-left: 4px solid #d97706; border-radius: 4px; font-size: 11px; color: #92400e; line-height: 1.5; }
+            .quote-scope { font-size: 12px; color: #475569; margin: 6px 0 0; line-height: 1.45; }
+            .quote-prepared { font-size: 11px; color: #64748b; margin-top: 6px; line-height: 1.4; }
+            .quote-accept { margin-top: 14px; padding-top: 10px; border-top: 1px dashed #cbd5e1; text-align: right; }
+            .quote-accept-title { font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #334155; margin: 0 0 8px; }
+            .quote-accept-line { border-bottom: 1px solid #94a3b8; height: 22px; margin: 8px 0 4px; }
+            .quote-accept-lbl { font-size: 10px; color: #64748b; margin: 0; text-align: right; }
             @page { size: A4; margin: 10mm; }
             @media print {
               html, body, * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
@@ -1143,22 +1229,28 @@ export default function AdminInvoicesPage({
                   <div class="tag">${escapeHtml(companyTagline || " ")}</div>
                 </div>
               </div>
-              <div class="inv-title">${escapeHtml(docLabels.title)}</div>
+              <div style="text-align:right;">
+                <div class="inv-title">${escapeHtml(docLabels.title)}</div>
+                ${quoteSubtitleHtml}
+              </div>
             </div>
             <div class="line-wrap">
               <div class="line-bg"></div>
               <div class="line-accent"></div>
             </div>
+            ${quoteBannerHtml}
             <div class="meta">
               <div>
                 <p class="to-label">${escapeHtml(docLabels.billToLabel)}</p>
                 <p class="to-name">${escapeHtml(billToName || "Client name")}</p>
+                ${quoteScopeHtml}
                 ${billContact}
               </div>
               <div class="inv-meta">
                 <p class="inv-no">${escapeHtml(docLabels.numberLabel)} ${escapeHtml(invoiceNumber)}</p>
-                <p class="inv-date">${escapeHtml(formatLongDate(issueDate))}</p>
+                <p class="inv-date">${escapeHtml(docLabels.issueDateLabel)} ${escapeHtml(formatLongDate(issueDate))}</p>
                 <p class="inv-date" style="color:#6b7280;margin-top:4px;">${escapeHtml(docLabels.dueLabel)} ${escapeHtml(formatLongDate(dueDate))}</p>
+                ${quotePreparedHtml}
               </div>
             </div>
             ${
@@ -1190,22 +1282,23 @@ export default function AdminInvoicesPage({
                 <div class="sumline"><span>Sub Total :</span><span>${currency} ${money(effectiveSubtotal)}</span></div>
                 <div class="sumline"><span>Tax ${taxRate}% :</span><span>${currency} ${money(effectiveTaxAmount)}</span></div>
                 ${discountRow}
-                <div class="grand"><span>GRAND TOTAL :</span><span>${currency} ${money(effectiveGrandTotal)}</span></div>
+                <div class="grand"><span>${escapeHtml(docLabels.grandTotalLabel)}</span><span>${currency} ${money(effectiveGrandTotal)}</span></div>
               </div>
             </div>
-            ${paymentScheduleHtml}
-            ${paymentMethodHtml}
+            ${docLabels.showPaymentSchedule ? paymentScheduleHtml : ""}
+            ${docLabels.showPaymentMethods ? paymentMethodHtml : ""}
             <div class="foot">
               <div class="terms">
-                <p style="margin:0 0 8px;font-weight:800;color:#111;">${escapeHtml(thankYouLine || "Thank you.")}</p>
-                <h4>Term and Conditions:</h4>
-                <p style="margin:0;white-space:pre-line;">${convertInlineBoldToHtml(termsText || "—")}</p>
+                <p style="margin:0 0 8px;font-weight:800;color:#111;">${escapeHtml(effectiveThankYou)}</p>
+                <h4>${escapeHtml(docLabels.termsHeading)}</h4>
+                <p style="margin:0;white-space:pre-line;">${convertInlineBoldToHtml(effectiveTerms || "—")}</p>
               </div>
               <div class="sign">
                 <p class="sign-name">${escapeHtml(signerName)}</p>
                 ${signBoldSignatureHtml}
                 <p class="sign-t">${escapeHtml(signerTitle)}</p>
                 ${stampBelowSignatureHtml}
+                ${quoteAcceptHtml}
               </div>
             </div>
             <div class="bar">
@@ -1306,16 +1399,18 @@ export default function AdminInvoicesPage({
       if (!silent) {
         toast({
           title: "Client name required",
-          description: "Please fill Invoice to (client name) before saving.",
+          description: `Please fill ${isQuotation ? "Quotation for" : "Invoice to"} (client name) before saving.`,
           variant: "destructive",
         })
       }
       return
     }
 
-    const hasMissingPaymentRequired = paymentMethods.some(
-      (pm) => !String(pm.accountName || "").trim() || !String(pm.bank || "").trim() || !String(pm.account || "").trim()
-    )
+    const hasMissingPaymentRequired =
+      !isQuotation &&
+      paymentMethods.some(
+        (pm) => !String(pm.accountName || "").trim() || !String(pm.bank || "").trim() || !String(pm.account || "").trim()
+      )
     if (hasMissingPaymentRequired) {
       if (!silent) {
         toast({
@@ -1353,6 +1448,8 @@ export default function AdminInvoicesPage({
       footerAddress,
       thankYouLine,
       termsText,
+      quotationScope,
+      quotationDisclaimer,
       items,
       paymentMethods,
       projectTables,
@@ -1434,7 +1531,7 @@ export default function AdminInvoicesPage({
                   "h-8 rounded-md px-4 text-xs font-semibold",
                   documentKind === "invoice" && "bg-[#184a96] text-white hover:bg-[#184a96]/90"
                 )}
-                onClick={() => setDocumentKind("invoice")}
+                onClick={() => switchDocumentKind("invoice")}
               >
                 Invoice
               </Button>
@@ -1446,7 +1543,7 @@ export default function AdminInvoicesPage({
                   "h-8 rounded-md px-4 text-xs font-semibold",
                   documentKind === "quotation" && "bg-[#184a96] text-white hover:bg-[#184a96]/90"
                 )}
-                onClick={() => setDocumentKind("quotation")}
+                onClick={() => switchDocumentKind("quotation")}
               >
                 Quotation
               </Button>
@@ -1470,7 +1567,7 @@ export default function AdminInvoicesPage({
           </Button>
           {!isPreviewOnly ? (
             <Button variant="outline" onClick={saveInvoiceToDatabase} className="gap-2" disabled={isSavingInvoice}>
-              {isSavingInvoice ? "Saving..." : "Save Invoice"}
+              {isSavingInvoice ? "Saving..." : docLabels.saveButtonLabel}
             </Button>
           ) : null}
           <Button variant="outline" onClick={() => window.print()} className="gap-2">
@@ -1591,7 +1688,7 @@ export default function AdminInvoicesPage({
                       "h-8 rounded-md px-4 text-xs font-semibold",
                       documentKind === "invoice" && "bg-[#184a96] text-white hover:bg-[#184a96]/90"
                     )}
-                    onClick={() => setDocumentKind("invoice")}
+                    onClick={() => switchDocumentKind("invoice")}
                   >
                     Invoice
                   </Button>
@@ -1603,19 +1700,46 @@ export default function AdminInvoicesPage({
                       "h-8 rounded-md px-4 text-xs font-semibold",
                       documentKind === "quotation" && "bg-[#184a96] text-white hover:bg-[#184a96]/90"
                     )}
-                    onClick={() => setDocumentKind("quotation")}
+                    onClick={() => switchDocumentKind("quotation")}
                   >
                     Quotation
                   </Button>
                 </div>
               </div>
+              {isQuotation ? (
+                <>
+                  <div>
+                    <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>
+                      Scope / project summary
+                    </label>
+                    <Textarea
+                      value={quotationScope}
+                      onChange={(e) => setQuotationScope(e.target.value)}
+                      placeholder="Brief description of what this quotation covers…"
+                      rows={2}
+                      className="min-h-[56px] resize-y text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>
+                      Quotation disclaimer (shown in amber banner)
+                    </label>
+                    <Textarea
+                      value={quotationDisclaimer}
+                      onChange={(e) => setQuotationDisclaimer(e.target.value)}
+                      rows={2}
+                      className="min-h-[56px] resize-y text-sm"
+                    />
+                  </div>
+                </>
+              ) : null}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
                 <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>{docLabels.numberField}</label>
                 <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
               </div>
               <div>
-                <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>Issue</label>
+                <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>{docLabels.issueDateLabel.replace(/:$/, "")}</label>
                 <Input type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
               </div>
               <div>
@@ -1734,7 +1858,7 @@ export default function AdminInvoicesPage({
                   </div>
                 );
                 })}
-                {hasProjectTables && projectTables?.paymentSchedule?.length ? (
+                {hasProjectTables && !isQuotation && projectTables?.paymentSchedule?.length ? (
                   <div className="rounded-lg border border-border/80 p-3">
                     <p className="mb-1 text-xs font-extrabold uppercase tracking-wide text-slate-700">Payment schedule</p>
                     <p className={cn("mb-3 text-[11px]", themeClasses.textNeutralSecondary)}>
@@ -1850,6 +1974,7 @@ export default function AdminInvoicesPage({
               ) : null}
             </div>
 
+            {!isQuotation ? (
             <div className="space-y-2">
               <button
                 type="button"
@@ -1919,6 +2044,7 @@ export default function AdminInvoicesPage({
             </div>
               ) : null}
             </div>
+            ) : null}
 
             <div className="space-y-2">
               <button
@@ -1926,24 +2052,25 @@ export default function AdminInvoicesPage({
                 className="flex w-full items-center justify-between rounded-md border border-border/70 px-3 py-2 text-left"
                 onClick={() => toggleDetailSection("terms")}
               >
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">Terms</span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">{docLabels.termsSectionLabel}</span>
                 <ChevronDown className={cn("h-4 w-4 transition-transform", detailSectionVisible.terms && "rotate-180")} />
               </button>
               {detailSectionVisible.terms ? (
                 <>
             <div>
-              <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>Thank you line</label>
-              <Input value={thankYouLine} onChange={(e) => setThankYouLine(e.target.value)} />
+              <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>{docLabels.thankYouFieldLabel}</label>
+              <Input value={thankYouLine} onChange={(e) => setThankYouLine(e.target.value)} placeholder={docLabels.thankYouDefault} />
             </div>
             <div>
-              <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>Terms and conditions</label>
+              <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>{docLabels.termsFieldLabel}</label>
               <p className={cn("mb-1 text-[11px]", themeClasses.textNeutralSecondary)}>Use Ctrl+B to wrap selected text in bold.</p>
               <Textarea
                 ref={termsTextareaRef}
                 value={termsText}
                 onChange={(e) => setTermsText(e.target.value)}
                 onKeyDown={handleTermsKeyDown}
-                rows={3}
+                rows={isQuotation ? 4 : 3}
+                placeholder={docLabels.termsDefault}
                 className="resize-y"
               />
             </div>
@@ -1982,15 +2109,19 @@ export default function AdminInvoicesPage({
                 className="flex w-full items-center justify-between rounded-md border border-border/70 px-3 py-2 text-left"
                 onClick={() => toggleDetailSection("signatureStamp")}
               >
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">Signature & stamp</span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">{isQuotation ? "Signature" : "Signature & stamp"}</span>
                 <ChevronDown className={cn("h-4 w-4 transition-transform", detailSectionVisible.signatureStamp && "rotate-180")} />
               </button>
               {detailSectionVisible.signatureStamp ? (
                 <>
-            <p className={cn("mt-2 text-xs font-semibold uppercase tracking-wide", themeClasses.textNeutralSecondary)}>Digital signature & company stamp</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <p className={cn("mt-2 text-xs font-semibold uppercase tracking-wide", themeClasses.textNeutralSecondary)}>
+              {isQuotation ? "Digital signature" : "Digital signature & company stamp"}
+            </p>
+            <div className={cn("grid grid-cols-1 gap-3", !isQuotation && "sm:grid-cols-2")}>
               <div className="rounded-lg border border-dashed border-border p-2">
-                <p className="mb-1.5 text-xs text-muted-foreground">Digital signature (shown above stamp in signature area)</p>
+                <p className="mb-1.5 text-xs text-muted-foreground">
+                  {isQuotation ? "Signature (shown in signature area)" : "Digital signature (shown above stamp in signature area)"}
+                </p>
                 <div className="flex flex-wrap gap-2">
                   <input
                     ref={signatureInputRef}
@@ -2012,6 +2143,7 @@ export default function AdminInvoicesPage({
                   <img src={signatureImage} alt="" className="mt-2 h-16 w-auto max-w-full object-contain" />
                 ) : null}
               </div>
+              {!isQuotation ? (
               <div className="rounded-lg border border-dashed border-border p-2">
                 <p className="mb-1.5 text-xs text-muted-foreground">Company stamp (use PNG with transparent background; shown below signature)</p>
                 <div className="flex flex-wrap gap-2">
@@ -2031,6 +2163,7 @@ export default function AdminInvoicesPage({
                   </div>
                 ) : null}
               </div>
+              ) : null}
             </div>
                 </>
               ) : null}
@@ -2103,14 +2236,19 @@ export default function AdminInvoicesPage({
                     </p>
                   </div>
                 </div>
-                <div
-                  className={cn(
-                    "font-extrabold tracking-wide sm:pt-0",
-                    documentKind === "quotation" ? "text-3xl sm:text-4xl" : "text-4xl"
-                  )}
-                  style={{ color: INV.blue }}
-                >
-                  {docLabels.title}
+                <div className="text-right">
+                  <div
+                    className={cn(
+                      "font-extrabold tracking-wide sm:pt-0",
+                      isQuotation ? "text-3xl sm:text-4xl" : "text-4xl"
+                    )}
+                    style={{ color: INV.blue }}
+                  >
+                    {docLabels.title}
+                  </div>
+                  {isQuotation && docLabels.subtitle ? (
+                    <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">{docLabels.subtitle}</p>
+                  ) : null}
                 </div>
               </div>
 
@@ -2123,19 +2261,33 @@ export default function AdminInvoicesPage({
                 </p>
               </div>
 
+              {isQuotation && effectiveDisclaimer ? (
+                <div className="mx-6 mt-4 rounded-md border border-amber-200 border-l-4 border-l-amber-500 bg-amber-50 px-3 py-2.5 text-xs leading-relaxed text-amber-900">
+                  {effectiveDisclaimer}
+                </div>
+              ) : null}
+
               {/* Invoice to + meta */}
               <div className="mt-4 grid grid-cols-1 gap-6 px-6 sm:grid-cols-2">
                 <div>
                   <p className="text-xs font-bold text-slate-900">{docLabels.billToLabel}</p>
                   <p className="mt-1 text-[15px] font-extrabold text-slate-900">{billToName || "Client name"}</p>
+                  {isQuotation && quotationScope.trim() ? (
+                    <p className="mt-1.5 text-xs leading-relaxed text-slate-600">{quotationScope.trim()}</p>
+                  ) : null}
                   {billToAddress && <p className="mt-0.5 whitespace-pre-line text-xs text-slate-500">{billToAddress}</p>}
                   {billToEmail && <p className="text-xs text-slate-500">{billToEmail}</p>}
                   {billToPhone && <p className="mt-0.5 text-xs text-slate-500">{billToPhone}</p>}
                 </div>
                 <div className="text-left sm:text-right">
                   <p className="text-sm font-extrabold text-slate-900">{docLabels.numberLabel} {invoiceNumber}</p>
-                  <p className="mt-1 text-sm text-slate-900">{formatLongDate(issueDate)}</p>
+                  <p className="mt-1 text-sm text-slate-900">{docLabels.issueDateLabel} {formatLongDate(issueDate)}</p>
                   <p className="mt-0.5 text-xs text-slate-500">{docLabels.dueLabel} {formatLongDate(dueDate)}</p>
+                  {isQuotation ? (
+                    <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+                      {docLabels.preparedByLabel} {fromName} · {fromEmail} · {fromPhone}
+                    </p>
+                  ) : null}
                 </div>
               </div>
 
@@ -2276,13 +2428,13 @@ export default function AdminInvoicesPage({
                     className="mt-2 flex items-center justify-between gap-2 px-3 py-2.5 text-xs font-extrabold uppercase tracking-wider text-white"
                     style={{ background: INV.blue }}
                   >
-                    <span>GRAND TOTAL :</span>
+                    <span>{docLabels.grandTotalLabel}</span>
                     <span className="tabular-nums">{currency} {money(effectiveGrandTotal)}</span>
                   </div>
                 </div>
               </div>
 
-              {hasProjectTables && paymentScheduleDisplay.length ? (
+              {docLabels.showPaymentSchedule && hasProjectTables && paymentScheduleDisplay.length ? (
                 <div className="mt-2 px-6">
                   <p className="mb-1.5 text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-900">PAYMENT SCHEDULE</p>
                   <div className="overflow-x-auto border border-slate-300">
@@ -2334,6 +2486,7 @@ export default function AdminInvoicesPage({
                 </div>
               ) : null}
 
+              {docLabels.showPaymentMethods ? (
               <div className="mt-6 px-6">
                 <div className="w-full max-w-md self-start text-left">
                   <div className="w-full max-w-md">
@@ -2372,15 +2525,16 @@ export default function AdminInvoicesPage({
                   </div>
                 </div>
               </div>
+              ) : null}
 
               {/* Terms + signature */}
               <div className="mt-2 grid grid-cols-1 gap-6 border-t border-slate-100 px-6 py-5 sm:grid-cols-[1fr_auto]">
                 <div className="text-xs leading-relaxed text-slate-600">
-                  <p className="font-extrabold text-slate-900">{thankYouLine}</p>
-                  <h4 className="mt-3 text-xs font-extrabold text-slate-900">Term and Conditions:</h4>
+                  <p className="font-extrabold text-slate-900">{effectiveThankYou}</p>
+                  <h4 className="mt-3 text-xs font-extrabold text-slate-900">{docLabels.termsHeading}</h4>
                   <p
                     className="mt-1 whitespace-pre-line"
-                    dangerouslySetInnerHTML={{ __html: convertInlineBoldToHtml(termsText || "—") }}
+                    dangerouslySetInnerHTML={{ __html: convertInlineBoldToHtml(effectiveTerms || "—") }}
                   />
                 </div>
                 <div className="w-full max-w-[280px] text-left sm:ml-auto sm:text-right">
@@ -2395,12 +2549,21 @@ export default function AdminInvoicesPage({
                     </div>
                   ) : null}
                   <p className="mt-2 text-xs text-slate-500">{signerTitle}</p>
-                  {stampImage ? (
+                  {!isQuotation && stampImage ? (
                     <img
                       src={stampImage}
                       alt=""
                       className="ml-auto mt-2 block h-36 w-auto max-w-[280px] object-contain opacity-95"
                     />
+                  ) : null}
+                  {isQuotation ? (
+                    <div className="mt-4 border-t border-dashed border-slate-300 pt-3 text-right">
+                      <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-700">{docLabels.acceptanceHeading}</p>
+                      <p className="mt-3 text-[10px] text-slate-500">Client name</p>
+                      <div className="ml-auto mt-1 h-6 max-w-[220px] border-b border-slate-400" />
+                      <p className="mt-3 text-[10px] text-slate-500">Signature &amp; date</p>
+                      <div className="ml-auto mt-1 h-6 max-w-[220px] border-b border-slate-400" />
+                    </div>
                   ) : null}
                 </div>
               </div>
