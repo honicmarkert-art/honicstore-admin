@@ -122,6 +122,41 @@ function columnWidthForKey(key: string): string {
   return "18%"
 }
 
+function isSerialColumnKey(key: string): boolean {
+  return key === "sn"
+}
+
+/** S/N is auto in the invoice; omit from the left-hand edit row inputs. */
+function editableProjectColumns(section: ExtraTableSection): ExtraTableColumn[] {
+  return section.columns.filter((col) => !isSerialColumnKey(col.key))
+}
+
+function projectEditRowGridClass(section: ExtraTableSection): string {
+  const cols = editableProjectColumns(section)
+  const n = cols.length
+  if (n === 4 && cols[0]?.key === "item") {
+    return "md:grid-cols-[minmax(0,2.5fr)_minmax(0,0.65fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+  }
+  if (n === 3 && cols[0]?.key === "item") {
+    return "md:grid-cols-[minmax(0,2.5fr)_minmax(0,0.75fr)_minmax(0,1fr)_auto]"
+  }
+  if (n <= 2) return "md:grid-cols-[minmax(0,1fr)_auto]"
+  if (n === 3) return "md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+  if (n === 4) return "md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+  if (n === 5) return "md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+  return "md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+}
+
+function displayProjectTableCell(
+  row: Record<string, string>,
+  col: ExtraTableColumn,
+  rowIndex: number,
+  currency: string
+): string {
+  if (isSerialColumnKey(col.key)) return String(rowIndex + 1)
+  return displayProjectCellValue(row[col.key] ?? "", col.key, currency)
+}
+
 function parseMoneyInput(value: string): number {
   const cleaned = value.replace(/[^0-9.-]/g, "")
   const parsed = Number(cleaned)
@@ -673,7 +708,10 @@ export default function AdminInvoicesPage({
       const sections = prev.sections.map((section, sIdx) => {
         if (sIdx !== sectionIndex) return section
         if (section.rows.length <= 1) return section
-        const rows = section.rows.filter((_, idx) => idx !== rowIndex).map((row, idx) => ({ ...row, sn: row.sn ? String(idx + 1) : row.sn }))
+        const rows = section.rows.filter((_, idx) => idx !== rowIndex).map((row, idx) => {
+          const hasSn = section.columns.some((c) => isSerialColumnKey(c.key))
+          return hasSn ? { ...row, sn: String(idx + 1) } : row
+        })
         return { ...section, rows }
       })
       return { ...prev, sections }
@@ -862,7 +900,7 @@ export default function AdminInvoicesPage({
           .map((row, rowIndex) => {
             const cells = section.columns
               .map((col) => {
-                const value = displayProjectCellValue(row[col.key] ?? "", col.key, currency)
+                const value = displayProjectTableCell(row, col, rowIndex, currency)
                 const klass = col.align === "right" ? "r" : col.align === "center" ? "c" : ""
                 const rowRed = isPrototype && isPrototypeRowHighlighted(row)
                 return `<td class="${klass}" style="${rowRed ? "color:#b91c1c;" : ""}">${escapeHtml(value)}</td>`
@@ -1549,17 +1587,8 @@ export default function AdminInvoicesPage({
                 </p>
                 {projectTables?.sections?.map((section, sectionIndex) => {
                   const prototypeSection = isPrototypeSectionTitle(section.title)
-                  const nCols = section.columns.length
-                  const projectRowGridClass =
-                    nCols <= 2
-                      ? "md:grid-cols-[minmax(0,1fr)_auto]"
-                      : nCols === 3
-                        ? "md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
-                        : nCols === 4
-                          ? "md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
-                          : nCols === 5
-                            ? "md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
-                            : "md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+                  const editColumns = editableProjectColumns(section)
+                  const projectRowGridClass = projectEditRowGridClass(section)
                   return (
                   <div key={section.title} className="space-y-2">
                   <div className="rounded-lg border border-border/80 p-3">
@@ -1573,7 +1602,7 @@ export default function AdminInvoicesPage({
                     <div className="space-y-2">
                       {section.rows.map((row, rowIndex) => (
                         <div key={`${section.title}-${rowIndex}`} className={cn("grid grid-cols-1 gap-2", projectRowGridClass)}>
-                          {section.columns.map((col) => {
+                          {editColumns.map((col) => {
                             const lineTotalK = lineTotalColumnKey(section)
                             const isAutoLineTotalField =
                               Boolean(lineTotalK && canAutoLineTotal(section) && col.key === lineTotalK)
@@ -1585,6 +1614,7 @@ export default function AdminInvoicesPage({
                                 onChange={(e) => updateProjectSectionCell(sectionIndex, rowIndex, col.key, e.target.value)}
                                 placeholder={col.label}
                                 className={cn(
+                                  col.key === "item" && "min-w-0",
                                   isAutoLineTotalField && "cursor-default bg-muted/50 tabular-nums",
                                   prototypeSection && isPrototypeRowHighlighted(row) && "text-red-700"
                                 )}
@@ -2120,7 +2150,7 @@ export default function AdminInvoicesPage({
                                   col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"
                                 )}
                               >
-                                {displayProjectCellValue(row[col.key] || "", col.key, currency)}
+                                {displayProjectTableCell(row, col, index, currency)}
                               </td>
                             ))}
                           </tr>
