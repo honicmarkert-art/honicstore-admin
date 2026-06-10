@@ -76,6 +76,20 @@ type DetailSectionKey =
   | "signatureStamp"
   | "footer"
 
+type DocumentKind = "invoice" | "quotation"
+
+function documentKindLabels(kind: DocumentKind) {
+  const isQuote = kind === "quotation"
+  return {
+    title: isQuote ? "QUOTATION" : "INVOICE",
+    numberLabel: isQuote ? "Quotation no :" : "Invoice no :",
+    billToLabel: isQuote ? "Quotation to:" : "Invoice to:",
+    dueLabel: isQuote ? "Valid until:" : "Due:",
+    metaSection: isQuote ? "Quotation meta" : "Invoice meta",
+    numberField: isQuote ? "Quotation #" : "Invoice #",
+  }
+}
+
 /** 4 fixed rows: material 50% + 50%, then service 50% + 50%; amounts are computed from section subtotals */
 const PAYMENT_SCHEDULE_TEMPLATE: ReadonlyArray<Pick<PaymentScheduleRow, "phase" | "description" | "amount">> = [
   { phase: "1", description: "Material and Components (Electrical + Prototype)", amount: "50%" },
@@ -331,6 +345,7 @@ export default function AdminInvoicesPage({
   const stampInputRef = useRef<HTMLInputElement | null>(null)
   const termsTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const [invoiceNumber, setInvoiceNumber] = useState(`INV-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`)
+  const [documentKind, setDocumentKind] = useState<DocumentKind>("invoice")
   const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10))
   const [dueDate, setDueDate] = useState(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
   const [fromName, setFromName] = useState(initialValues?.fromName ?? "Honic Company Store")
@@ -399,6 +414,7 @@ export default function AdminInvoicesPage({
         const p = inv?.payload || {}
 
         setInvoiceNumber(String(inv?.invoice_number || p.invoiceNumber || ""))
+        setDocumentKind(p.documentKind === "quotation" ? "quotation" : "invoice")
         setIssueDate(String(inv?.issue_date || p.issueDate || ""))
         setDueDate(String(inv?.due_date || p.dueDate || ""))
         setCurrency(String(inv?.currency || p.currency || "TZS"))
@@ -506,6 +522,7 @@ export default function AdminInvoicesPage({
   const total = useMemo(() => Math.max(0, subtotal + taxAmount - discount), [subtotal, taxAmount, discount])
 
   const websiteDisplay = companyWebsite.replace(/^https?:\/\//i, "").toLowerCase()
+  const docLabels = useMemo(() => documentKindLabels(documentKind), [documentKind])
   const hasProjectTables = Boolean(projectTables?.sections?.length || projectTables?.paymentSchedule?.length)
   const getSectionSubtotal = (section: ExtraTableSection): number => {
     const totalKey =
@@ -1126,7 +1143,7 @@ export default function AdminInvoicesPage({
                   <div class="tag">${escapeHtml(companyTagline || " ")}</div>
                 </div>
               </div>
-              <div class="inv-title">INVOICE</div>
+              <div class="inv-title">${escapeHtml(docLabels.title)}</div>
             </div>
             <div class="line-wrap">
               <div class="line-bg"></div>
@@ -1134,14 +1151,14 @@ export default function AdminInvoicesPage({
             </div>
             <div class="meta">
               <div>
-                <p class="to-label">Invoice to:</p>
+                <p class="to-label">${escapeHtml(docLabels.billToLabel)}</p>
                 <p class="to-name">${escapeHtml(billToName || "Client name")}</p>
                 ${billContact}
               </div>
               <div class="inv-meta">
-                <p class="inv-no">Invoice no : ${escapeHtml(invoiceNumber)}</p>
+                <p class="inv-no">${escapeHtml(docLabels.numberLabel)} ${escapeHtml(invoiceNumber)}</p>
                 <p class="inv-date">${escapeHtml(formatLongDate(issueDate))}</p>
-                <p class="inv-date" style="color:#6b7280;margin-top:4px;">Due: ${escapeHtml(formatLongDate(dueDate))}</p>
+                <p class="inv-date" style="color:#6b7280;margin-top:4px;">${escapeHtml(docLabels.dueLabel)} ${escapeHtml(formatLongDate(dueDate))}</p>
               </div>
             </div>
             ${
@@ -1312,6 +1329,7 @@ export default function AdminInvoicesPage({
 
     const payload = {
       invoiceNumber,
+      documentKind,
       invoiceId: savedInvoiceId || undefined,
       dashboardScope,
       issueDate,
@@ -1405,7 +1423,40 @@ export default function AdminInvoicesPage({
             </p>
           ) : null}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-col items-stretch gap-3 sm:items-end">
+          {!isPreviewOnly ? (
+            <div className="inline-flex self-start rounded-lg border border-border p-0.5 sm:self-end">
+              <Button
+                type="button"
+                size="sm"
+                variant={documentKind === "invoice" ? "default" : "ghost"}
+                className={cn(
+                  "h-8 rounded-md px-4 text-xs font-semibold",
+                  documentKind === "invoice" && "bg-[#184a96] text-white hover:bg-[#184a96]/90"
+                )}
+                onClick={() => setDocumentKind("invoice")}
+              >
+                Invoice
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={documentKind === "quotation" ? "default" : "ghost"}
+                className={cn(
+                  "h-8 rounded-md px-4 text-xs font-semibold",
+                  documentKind === "quotation" && "bg-[#184a96] text-white hover:bg-[#184a96]/90"
+                )}
+                onClick={() => setDocumentKind("quotation")}
+              >
+                Quotation
+              </Button>
+            </div>
+          ) : (
+            <span className="self-start rounded-md bg-muted px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:self-end">
+              {docLabels.title}
+            </span>
+          )}
+          <div className="flex flex-wrap gap-2">
           {isPreviewOnly ? (
             <Button variant="outline" asChild>
               <Link href={backToSavedInvoice}>
@@ -1433,6 +1484,7 @@ export default function AdminInvoicesPage({
             <FileDown className="h-4 w-4" />
             Download PDF
           </Button>
+          </div>
         </div>
       </div>
 
@@ -1523,13 +1575,43 @@ export default function AdminInvoicesPage({
                 className="flex w-full items-center justify-between rounded-md border border-border/70 px-3 py-2 text-left"
                 onClick={() => toggleDetailSection("invoiceMeta")}
               >
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">Invoice meta</span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">{docLabels.metaSection}</span>
                 <ChevronDown className={cn("h-4 w-4 transition-transform", detailSectionVisible.invoiceMeta && "rotate-180")} />
               </button>
               {detailSectionVisible.invoiceMeta ? (
+            <div className="space-y-3">
+              <div>
+                <label className={cn("mb-1.5 block text-xs font-medium", themeClasses.textNeutralSecondary)}>Document type</label>
+                <div className="inline-flex rounded-lg border border-border p-0.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={documentKind === "invoice" ? "default" : "ghost"}
+                    className={cn(
+                      "h-8 rounded-md px-4 text-xs font-semibold",
+                      documentKind === "invoice" && "bg-[#184a96] text-white hover:bg-[#184a96]/90"
+                    )}
+                    onClick={() => setDocumentKind("invoice")}
+                  >
+                    Invoice
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={documentKind === "quotation" ? "default" : "ghost"}
+                    className={cn(
+                      "h-8 rounded-md px-4 text-xs font-semibold",
+                      documentKind === "quotation" && "bg-[#184a96] text-white hover:bg-[#184a96]/90"
+                    )}
+                    onClick={() => setDocumentKind("quotation")}
+                  >
+                    Quotation
+                  </Button>
+                </div>
+              </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
-                <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>Invoice #</label>
+                <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>{docLabels.numberField}</label>
                 <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
               </div>
               <div>
@@ -1537,9 +1619,10 @@ export default function AdminInvoicesPage({
                 <Input type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
               </div>
               <div>
-                <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>Due</label>
+                <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>{docLabels.dueLabel.replace(/:$/, "")}</label>
                 <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
               </div>
+            </div>
             </div>
               ) : null}
             </div>
@@ -1561,7 +1644,7 @@ export default function AdminInvoicesPage({
                 <Input value={fromPhone} onChange={(e) => setFromPhone(e.target.value)} placeholder="Phone" />
               </div>
               <div className="space-y-2">
-                <p className={cn("text-xs font-semibold uppercase tracking-wide", themeClasses.textNeutralSecondary)}>Invoice to</p>
+                <p className={cn("text-xs font-semibold uppercase tracking-wide", themeClasses.textNeutralSecondary)}>{docLabels.billToLabel.replace(/:$/, "")}</p>
                 <Input value={billToName} onChange={(e) => setBillToName(e.target.value)} placeholder="Client name" />
                 <Textarea value={billToAddress} onChange={(e) => setBillToAddress(e.target.value)} placeholder="Address" rows={3} className="min-h-[72px] resize-y" />
                 <Input value={billToEmail} onChange={(e) => setBillToEmail(e.target.value)} placeholder="Client email" type="email" />
@@ -2021,10 +2104,13 @@ export default function AdminInvoicesPage({
                   </div>
                 </div>
                 <div
-                  className="text-4xl font-extrabold tracking-wide sm:pt-0"
+                  className={cn(
+                    "font-extrabold tracking-wide sm:pt-0",
+                    documentKind === "quotation" ? "text-3xl sm:text-4xl" : "text-4xl"
+                  )}
                   style={{ color: INV.blue }}
                 >
-                  INVOICE
+                  {docLabels.title}
                 </div>
               </div>
 
@@ -2040,16 +2126,16 @@ export default function AdminInvoicesPage({
               {/* Invoice to + meta */}
               <div className="mt-4 grid grid-cols-1 gap-6 px-6 sm:grid-cols-2">
                 <div>
-                  <p className="text-xs font-bold text-slate-900">Invoice to:</p>
+                  <p className="text-xs font-bold text-slate-900">{docLabels.billToLabel}</p>
                   <p className="mt-1 text-[15px] font-extrabold text-slate-900">{billToName || "Client name"}</p>
                   {billToAddress && <p className="mt-0.5 whitespace-pre-line text-xs text-slate-500">{billToAddress}</p>}
                   {billToEmail && <p className="text-xs text-slate-500">{billToEmail}</p>}
                   {billToPhone && <p className="mt-0.5 text-xs text-slate-500">{billToPhone}</p>}
                 </div>
                 <div className="text-left sm:text-right">
-                  <p className="text-sm font-extrabold text-slate-900">Invoice no : {invoiceNumber}</p>
+                  <p className="text-sm font-extrabold text-slate-900">{docLabels.numberLabel} {invoiceNumber}</p>
                   <p className="mt-1 text-sm text-slate-900">{formatLongDate(issueDate)}</p>
-                  <p className="mt-0.5 text-xs text-slate-500">Due: {formatLongDate(dueDate)}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">{docLabels.dueLabel} {formatLongDate(dueDate)}</p>
                 </div>
               </div>
 
