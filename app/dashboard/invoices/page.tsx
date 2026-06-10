@@ -90,9 +90,8 @@ const DOCUMENT_DEFAULTS: Record<
   quotation: {
     thankYou: "Thank you for considering our proposal.",
     terms:
-      "This quotation is valid until the date shown above. Prices are estimates and subject to availability. Written acceptance is required before work or supply begins.",
-    disclaimer:
-      "This document is a quotation only — not a tax invoice. No payment is due until a formal invoice is issued upon acceptance.",
+      "This document is a quotation only — not a tax invoice. No payment is due until a formal invoice is issued upon acceptance.\n\nThis quotation is valid until the date shown above. Prices are estimates and subject to availability. Written acceptance is required before work or supply begins.",
+    disclaimer: "",
   },
 }
 
@@ -411,7 +410,6 @@ export default function AdminInvoicesPage({
   const [discount, setDiscount] = useState(0)
   const [thankYouLine, setThankYouLine] = useState("Thank you for your business.")
   const [quotationScope, setQuotationScope] = useState("")
-  const [quotationDisclaimer, setQuotationDisclaimer] = useState(DOCUMENT_DEFAULTS.quotation.disclaimer)
   const [items, setItems] = useState<InvoiceItem[]>([
     { id: "1", description: "Product or service", quantity: 1, unitPrice: 0 },
   ])
@@ -474,7 +472,13 @@ export default function AdminInvoicesPage({
         setThankYouLine(String(p.thankYouLine || thankYouLine))
         setTermsText(String(p.termsText || termsText))
         setQuotationScope(String(p.quotationScope || ""))
-        setQuotationDisclaimer(String(p.quotationDisclaimer || DOCUMENT_DEFAULTS.quotation.disclaimer))
+        if (p.documentKind === "quotation" && p.quotationDisclaimer && typeof p.termsText === "string") {
+          const disc = String(p.quotationDisclaimer)
+          const terms = String(p.termsText || "")
+          if (disc && !terms.includes(disc)) {
+            setTermsText(terms.trim() ? `${disc}\n\n${terms}` : disc)
+          }
+        }
         if (typeof p.invoiceLogo === "string" && p.invoiceLogo) setInvoiceLogo(p.invoiceLogo)
         if (typeof p.signatureImage === "string" && p.signatureImage) setSignatureImage(p.signatureImage)
         if (typeof p.stampImage === "string" && p.stampImage) setStampImage(p.stampImage)
@@ -565,7 +569,7 @@ export default function AdminInvoicesPage({
   const isQuotation = documentKind === "quotation"
   const effectiveThankYou = thankYouLine.trim() || docLabels.thankYouDefault
   const effectiveTerms = termsText.trim() || docLabels.termsDefault
-  const effectiveDisclaimer = quotationDisclaimer.trim() || docLabels.disclaimerDefault
+  const preparedByFooter = `${fromName || "—"} · ${fromEmail || "—"} · ${fromPhone || "—"}`
   const hasProjectTables = Boolean(projectTables?.sections?.length || projectTables?.paymentSchedule?.length)
 
   const switchDocumentKind = (kind: DocumentKind) => {
@@ -1077,12 +1081,8 @@ export default function AdminInvoicesPage({
       isQuotation && quotationScope.trim()
         ? `<p class="quote-scope">${escapeHtml(quotationScope.trim())}</p>`
         : ""
-    const quoteBannerHtml =
-      isQuotation && effectiveDisclaimer
-        ? `<div class="quote-banner">${escapeHtml(effectiveDisclaimer)}</div>`
-        : ""
-    const quotePreparedHtml = isQuotation
-      ? `<p class="quote-prepared">${escapeHtml(docLabels.preparedByLabel)} ${escapeHtml(fromName || "—")} · ${escapeHtml(fromEmail || "—")} · ${escapeHtml(fromPhone || "—")}</p>`
+    const quotePreparedFooterHtml = isQuotation
+      ? `<p class="quote-prepared-footer">${escapeHtml(docLabels.preparedByLabel)} ${escapeHtml(preparedByFooter)}</p>`
       : ""
     const quoteAcceptHtml = isQuotation
       ? `<div class="quote-accept">
@@ -1185,9 +1185,8 @@ export default function AdminInvoicesPage({
             .ic { display: flex; align-items: center; gap: 8px; }
             .ic svg { display: none; }
             .quote-sub { font-size: 9px; font-weight: 700; color: #64748b; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 5px; text-align: right; }
-            .quote-banner { margin-top: 14px; padding: 10px 14px; background: #fffbeb; border: 1px solid #fcd34d; border-left: 4px solid #d97706; border-radius: 4px; font-size: 11px; color: #92400e; line-height: 1.5; }
             .quote-scope { font-size: 12px; color: #475569; margin: 6px 0 0; line-height: 1.45; }
-            .quote-prepared { font-size: 11px; color: #64748b; margin-top: 6px; line-height: 1.4; }
+            .quote-prepared-footer { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e7eb; font-size: 11px; color: #64748b; text-align: center; line-height: 1.45; }
             .quote-accept { margin-top: 14px; padding-top: 10px; border-top: 1px dashed #cbd5e1; text-align: right; }
             .quote-accept-title { font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #334155; margin: 0 0 8px; }
             .quote-accept-line { border-bottom: 1px solid #94a3b8; height: 22px; margin: 8px 0 4px; }
@@ -1238,7 +1237,6 @@ export default function AdminInvoicesPage({
               <div class="line-bg"></div>
               <div class="line-accent"></div>
             </div>
-            ${quoteBannerHtml}
             <div class="meta">
               <div>
                 <p class="to-label">${escapeHtml(docLabels.billToLabel)}</p>
@@ -1250,7 +1248,6 @@ export default function AdminInvoicesPage({
                 <p class="inv-no">${escapeHtml(docLabels.numberLabel)} ${escapeHtml(invoiceNumber)}</p>
                 <p class="inv-date">${escapeHtml(docLabels.issueDateLabel)} ${escapeHtml(formatLongDate(issueDate))}</p>
                 <p class="inv-date" style="color:#6b7280;margin-top:4px;">${escapeHtml(docLabels.dueLabel)} ${escapeHtml(formatLongDate(dueDate))}</p>
-                ${quotePreparedHtml}
               </div>
             </div>
             ${
@@ -1310,6 +1307,7 @@ export default function AdminInvoicesPage({
               <div class="ic">✉ <span>${escapeHtml(footerEmail)}</span></div>
               <div class="ic">📍 <span>${escapeHtml(footerAddress)}</span></div>
             </div>
+            ${quotePreparedFooterHtml}
             </div>
           </div>
         </body>
@@ -1449,7 +1447,6 @@ export default function AdminInvoicesPage({
       thankYouLine,
       termsText,
       quotationScope,
-      quotationDisclaimer,
       items,
       paymentMethods,
       projectTables,
@@ -1716,17 +1713,6 @@ export default function AdminInvoicesPage({
                       value={quotationScope}
                       onChange={(e) => setQuotationScope(e.target.value)}
                       placeholder="Brief description of what this quotation covers…"
-                      rows={2}
-                      className="min-h-[56px] resize-y text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>
-                      Quotation disclaimer (shown in amber banner)
-                    </label>
-                    <Textarea
-                      value={quotationDisclaimer}
-                      onChange={(e) => setQuotationDisclaimer(e.target.value)}
                       rows={2}
                       className="min-h-[56px] resize-y text-sm"
                     />
@@ -2261,12 +2247,6 @@ export default function AdminInvoicesPage({
                 </p>
               </div>
 
-              {isQuotation && effectiveDisclaimer ? (
-                <div className="mx-6 mt-4 rounded-md border border-amber-200 border-l-4 border-l-amber-500 bg-amber-50 px-3 py-2.5 text-xs leading-relaxed text-amber-900">
-                  {effectiveDisclaimer}
-                </div>
-              ) : null}
-
               {/* Invoice to + meta */}
               <div className="mt-4 grid grid-cols-1 gap-6 px-6 sm:grid-cols-2">
                 <div>
@@ -2283,11 +2263,6 @@ export default function AdminInvoicesPage({
                   <p className="text-sm font-extrabold text-slate-900">{docLabels.numberLabel} {invoiceNumber}</p>
                   <p className="mt-1 text-sm text-slate-900">{docLabels.issueDateLabel} {formatLongDate(issueDate)}</p>
                   <p className="mt-0.5 text-xs text-slate-500">{docLabels.dueLabel} {formatLongDate(dueDate)}</p>
-                  {isQuotation ? (
-                    <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
-                      {docLabels.preparedByLabel} {fromName} · {fromEmail} · {fromPhone}
-                    </p>
-                  ) : null}
                 </div>
               </div>
 
@@ -2601,6 +2576,11 @@ export default function AdminInvoicesPage({
                     <span className="break-words pt-0.5">{footerAddress}</span>
                   </div>
                 </div>
+                {isQuotation ? (
+                  <p className="mt-3 border-t border-slate-200 pt-3 text-center text-[11px] leading-relaxed text-slate-500">
+                    {docLabels.preparedByLabel} {preparedByFooter}
+                  </p>
+                ) : null}
               </div>
               </div>
             </div>
