@@ -1087,9 +1087,7 @@ export default function AdminInvoicesPage({
     const quoteAcceptHtml = isQuotation
       ? `<div class="quote-accept">
           <p class="quote-accept-title">${escapeHtml(docLabels.acceptanceHeading)}</p>
-          <p class="quote-accept-lbl">Client name</p>
-          <div class="quote-accept-line"></div>
-          <p class="quote-accept-lbl">Signature &amp; date</p>
+          <p class="quote-accept-lbl">Signature</p>
           <div class="quote-accept-line"></div>
         </div>`
       : ""
@@ -2534,9 +2532,7 @@ export default function AdminInvoicesPage({
                   {isQuotation ? (
                     <div className="mt-4 border-t border-dashed border-slate-300 pt-3 text-right">
                       <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-700">{docLabels.acceptanceHeading}</p>
-                      <p className="mt-3 text-[10px] text-slate-500">Client name</p>
-                      <div className="ml-auto mt-1 h-6 max-w-[220px] border-b border-slate-400" />
-                      <p className="mt-3 text-[10px] text-slate-500">Signature &amp; date</p>
+                      <p className="mt-3 text-[10px] text-slate-500">Signature</p>
                       <div className="ml-auto mt-1 h-6 max-w-[220px] border-b border-slate-400" />
                     </div>
                   ) : null}
