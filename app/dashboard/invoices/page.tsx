@@ -45,6 +45,8 @@ type ExtraTableSection = {
   columns: ExtraTableColumn[]
   rows: Record<string, string>[]
   subtotal?: string
+  /** When true, section is omitted from preview, PDF, and totals. */
+  hidden?: boolean
 }
 
 type PaymentScheduleRow = {
@@ -61,6 +63,8 @@ type InvoiceExtraTables = {
   paymentGrandTotal?: string
   paymentDeadline?: string
   note?: string
+  /** When true, payment schedule table is hidden on preview/PDF (invoice mode only). */
+  hidePaymentSchedule?: boolean
 }
 
 type DetailSectionKey =
@@ -150,6 +154,20 @@ function money(value: number): string {
 
 function isPrototypeSectionTitle(title: string): boolean {
   return /prototype/i.test(String(title || ""))
+}
+
+function isProjectSectionVisible(section: ExtraTableSection): boolean {
+  return section.hidden !== true
+}
+
+function visibleProjectSections(sections: ExtraTableSection[] | undefined): ExtraTableSection[] {
+  return (sections || []).filter(isProjectSectionVisible)
+}
+
+function isPaymentScheduleVisible(projectTables: InvoiceExtraTables | undefined, showForDocKind: boolean): boolean {
+  if (!showForDocKind) return false
+  if (!projectTables?.paymentSchedule?.length) return false
+  return projectTables.hidePaymentSchedule !== true
 }
 
 function isPrototypeRowHighlighted(row: Record<string, string>): boolean {
@@ -591,22 +609,25 @@ export default function AdminInvoicesPage({
     return section.rows.reduce((sum, row) => sum + parseMoneyInput(row[totalKey] || "0"), 0)
   }
   const projectSubtotal = useMemo(
-    () => (projectTables?.sections || []).reduce((sum, section) => sum + getSectionSubtotal(section), 0),
+    () => visibleProjectSections(projectTables?.sections).reduce((sum, section) => sum + getSectionSubtotal(section), 0),
     [projectTables]
   )
   /** Section 0+1 = Electrical + Prototype; section 2 = Service */
   const materialSubtotalForSchedule = useMemo(() => {
     const secs = projectTables?.sections
     if (!secs?.length) return 0
-    const a = getSectionSubtotal(secs[0]!)
-    const b = secs[1] ? getSectionSubtotal(secs[1]) : 0
-    return a + b
+    let total = 0
+    if (secs[0] && isProjectSectionVisible(secs[0])) total += getSectionSubtotal(secs[0])
+    if (secs[1] && isProjectSectionVisible(secs[1])) total += getSectionSubtotal(secs[1])
+    return total
   }, [projectTables])
   const serviceSubtotalForSchedule = useMemo(() => {
     const secs = projectTables?.sections
     if (!secs || secs.length < 3) return 0
+    if (!isProjectSectionVisible(secs[2]!)) return 0
     return getSectionSubtotal(secs[2]!)
   }, [projectTables])
+  const showPaymentScheduleTable = isPaymentScheduleVisible(projectTables, docLabels.showPaymentSchedule)
   const effectiveSubtotal = hasProjectTables ? projectSubtotal : subtotal
   const effectiveTaxAmount = (effectiveSubtotal * taxRate) / 100
   const effectiveGrandTotal = Math.max(0, effectiveSubtotal + effectiveTaxAmount - discount)
@@ -808,6 +829,20 @@ export default function AdminInvoicesPage({
     })
   }
 
+  const toggleProjectSectionVisibility = (sectionIndex: number, visible: boolean) => {
+    setProjectTables((prev) => {
+      if (!prev?.sections) return prev
+      const sections = prev.sections.map((section, sIdx) =>
+        sIdx === sectionIndex ? { ...section, hidden: visible ? undefined : true } : section
+      )
+      return { ...prev, sections }
+    })
+  }
+
+  const togglePaymentScheduleVisibility = (visible: boolean) => {
+    setProjectTables((prev) => (prev ? { ...prev, hidePaymentSchedule: visible ? undefined : true } : prev))
+  }
+
   const uploadInvoiceAsset = async (file: File, kind: "logo" | "signature" | "stamp"): Promise<string> => {
     const dataUrl = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader()
@@ -957,7 +992,7 @@ export default function AdminInvoicesPage({
       })
       .join("")
 
-    const extraSectionsHtml = (projectTables?.sections || [])
+    const extraSectionsHtml = visibleProjectSections(projectTables?.sections)
       .map((section) => {
         const isPrototype = isPrototypeSectionTitle(section.title)
         const cols = section.columns
@@ -999,10 +1034,8 @@ export default function AdminInvoicesPage({
       })
       .join("")
 
-    const secListPdf = projectTables?.sections || []
-    const svcTotalPdf = secListPdf[2] ? getSectionSubtotal(secListPdf[2]) : 0
     const gtPdf = Math.max(0, Math.round(effectiveGrandTotal))
-    const svcPdf = Math.max(0, Math.round(svcTotalPdf))
+    const svcPdf = Math.max(0, Math.round(serviceSubtotalForSchedule))
     const svcAppliedPdf = Math.min(svcPdf, gtPdf)
     const matRemPdf = Math.max(0, gtPdf - svcAppliedPdf)
     const payAmtPdf = [
@@ -1012,7 +1045,7 @@ export default function AdminInvoicesPage({
       svcAppliedPdf - Math.floor(svcAppliedPdf / 2),
     ]
     const schedRawPdf = projectTables?.paymentSchedule || []
-    const paymentScheduleHtml = hasProjectTables && docLabels.showPaymentSchedule
+    const paymentScheduleHtml = showPaymentScheduleTable
       ? `
         <div class="extra-block">
           <p class="extra-title">PAYMENT SCHEDULE</p>
@@ -1280,7 +1313,7 @@ export default function AdminInvoicesPage({
                 <div class="grand"><span>${escapeHtml(docLabels.grandTotalLabel)}</span><span>${currency} ${money(effectiveGrandTotal)}</span></div>
               </div>
             </div>
-            ${docLabels.showPaymentSchedule ? paymentScheduleHtml : ""}
+            ${showPaymentScheduleTable ? paymentScheduleHtml : ""}
             ${docLabels.showPaymentMethods ? paymentMethodHtml : ""}
             <div class="foot">
               <div class="terms">
@@ -1773,6 +1806,31 @@ export default function AdminInvoicesPage({
               </button>
               {detailSectionVisible.items ? (hasProjectTables ? (
               <div className="space-y-4">
+                <div className="rounded-lg border border-border/80 bg-muted/20 p-3 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Show on invoice</p>
+                  {projectTables?.sections?.map((section, sectionIndex) => (
+                    <label key={`vis-${section.title}`} className="flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={isProjectSectionVisible(section)}
+                        onChange={(e) => toggleProjectSectionVisibility(sectionIndex, e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300"
+                      />
+                      {section.title}
+                    </label>
+                  ))}
+                  {!isQuotation && projectTables?.paymentSchedule?.length ? (
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={!projectTables.hidePaymentSchedule}
+                        onChange={(e) => togglePaymentScheduleVisibility(e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300"
+                      />
+                      Payment schedule
+                    </label>
+                  ) : null}
+                </div>
                 <p className={cn("text-xs font-semibold uppercase tracking-wide", themeClasses.textNeutralSecondary)}>
                   Project sections (editable)
                 </p>
@@ -1780,11 +1838,23 @@ export default function AdminInvoicesPage({
                   const prototypeSection = isPrototypeSectionTitle(section.title)
                   const editColumns = editableProjectColumns(section)
                   const projectRowGridClass = projectEditRowGridClass(section)
+                  const sectionVisible = isProjectSectionVisible(section)
                   return (
                   <div key={section.title} className="space-y-2">
-                  <div className="rounded-lg border border-border/80 p-3">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <p className="text-xs font-extrabold uppercase tracking-wide text-slate-700">{section.title}</p>
+                  <div className={cn("rounded-lg border border-border/80 p-3", !sectionVisible && "opacity-60")}>
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <p className="text-xs font-extrabold uppercase tracking-wide text-slate-700">{section.title}</p>
+                        <label className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600">
+                          <input
+                            type="checkbox"
+                            checked={sectionVisible}
+                            onChange={(e) => toggleProjectSectionVisibility(sectionIndex, e.target.checked)}
+                            className="h-3.5 w-3.5 rounded border-slate-300"
+                          />
+                          Show on invoice
+                        </label>
+                      </div>
                       <Button type="button" size="sm" variant="outline" className="h-7 gap-1" onClick={() => addProjectSectionRow(sectionIndex)}>
                         <Plus className="h-3.5 w-3.5" />
                         Row
@@ -1843,8 +1913,19 @@ export default function AdminInvoicesPage({
                 );
                 })}
                 {hasProjectTables && !isQuotation && projectTables?.paymentSchedule?.length ? (
-                  <div className="rounded-lg border border-border/80 p-3">
-                    <p className="mb-1 text-xs font-extrabold uppercase tracking-wide text-slate-700">Payment schedule</p>
+                  <div className={cn("rounded-lg border border-border/80 p-3", projectTables.hidePaymentSchedule && "opacity-60")}>
+                    <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs font-extrabold uppercase tracking-wide text-slate-700">Payment schedule</p>
+                      <label className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={!projectTables.hidePaymentSchedule}
+                          onChange={(e) => togglePaymentScheduleVisibility(e.target.checked)}
+                          className="h-3.5 w-3.5 rounded border-slate-300"
+                        />
+                        Show on invoice
+                      </label>
+                    </div>
                     <p className={cn("mb-3 text-[11px]", themeClasses.textNeutralSecondary)}>
                       Phases 1-2 use half of (invoice total - service), phases 3-4 use half of service. Edit deadlines here.
                     </p>
@@ -2322,7 +2403,7 @@ export default function AdminInvoicesPage({
                 </div>
               ) : null}
 
-              {projectTables?.sections?.map((section) => {
+              {visibleProjectSections(projectTables?.sections).map((section) => {
                 const prototypeSection = isPrototypeSectionTitle(section.title)
                 return (
                 <div key={section.title} className="mt-2 px-6">
@@ -2407,7 +2488,7 @@ export default function AdminInvoicesPage({
                 </div>
               </div>
 
-              {docLabels.showPaymentSchedule && hasProjectTables && paymentScheduleDisplay.length ? (
+              {showPaymentScheduleTable && paymentScheduleDisplay.length ? (
                 <div className="mt-2 px-6">
                   <p className="mb-1.5 text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-900">PAYMENT SCHEDULE</p>
                   <div className="overflow-x-auto border border-slate-300">
