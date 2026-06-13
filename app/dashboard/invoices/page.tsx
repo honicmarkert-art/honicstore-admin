@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Plus, Printer, Trash2, Sparkles, FileDown, ImagePlus, RotateCcw, Phone, Mail, MapPin, ChevronDown, ArrowLeft } from "lucide-react"
@@ -378,6 +378,43 @@ function normalizeScheduleDateOnBlur(value: string): string {
   return `${day}/${month}/${year}`
 }
 
+/** Payment schedule ends on 25 July; phases are spaced evenly from issue date to that date. */
+const SCHEDULE_END_MONTH = 6
+const SCHEDULE_END_DAY = 25
+const PAYMENT_SCHEDULE_PHASE_COUNT = 4
+
+function formatScheduleDeadlineDate(d: Date): string {
+  const day = String(d.getDate()).padStart(2, "0")
+  const month = String(d.getMonth() + 1).padStart(2, "0")
+  const year = String(d.getFullYear()).slice(-2)
+  return `${day}/${month}/${year}`
+}
+
+function getPaymentScheduleEndDate(start: Date): Date {
+  const afterEnd =
+    start.getMonth() > SCHEDULE_END_MONTH ||
+    (start.getMonth() === SCHEDULE_END_MONTH && start.getDate() > SCHEDULE_END_DAY)
+  const endYear = afterEnd ? start.getFullYear() + 1 : start.getFullYear()
+  return new Date(endYear, SCHEDULE_END_MONTH, SCHEDULE_END_DAY, 12, 0, 0, 0)
+}
+
+function computeAutoScheduleDeadlines(issueDateIso: string, phases = PAYMENT_SCHEDULE_PHASE_COUNT): string[] {
+  const start = new Date(`${issueDateIso}T12:00:00`)
+  if (Number.isNaN(start.getTime())) return Array(phases).fill("")
+  const end = getPaymentScheduleEndDate(start)
+  const startMs = start.getTime()
+  const endMs = end.getTime()
+  const span = endMs - startMs
+  if (span <= 0) {
+    const fmt = formatScheduleDeadlineDate(end)
+    return Array(phases).fill(fmt)
+  }
+  return Array.from({ length: phases }, (_, i) => {
+    const t = startMs + (span * (i + 1)) / phases
+    return formatScheduleDeadlineDate(new Date(t))
+  })
+}
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -751,6 +788,36 @@ export default function AdminInvoicesPage({
       return { ...prev, paymentSchedule: next }
     })
   }, [hasProjectTables, projectTables?.paymentSchedule?.length])
+
+  const autoFillScheduleDeadlines = useCallback(
+    (startIso: string) => {
+      if (!hasProjectTables || isQuotation || !startIso) return
+      const deadlines = computeAutoScheduleDeadlines(startIso, PAYMENT_SCHEDULE_PHASE_COUNT)
+      if (deadlines.every((d) => !d)) return
+      setProjectTables((prev) => {
+        if (!prev?.paymentSchedule?.length) return prev
+        return {
+          ...prev,
+          paymentSchedule: prev.paymentSchedule.map((row, idx) => ({
+            ...row,
+            deadline: deadlines[idx] ?? row.deadline,
+          })),
+        }
+      })
+    },
+    [hasProjectTables, isQuotation]
+  )
+
+  const handleIssueDateChange = (value: string) => {
+    setIssueDate(value)
+    autoFillScheduleDeadlines(value)
+  }
+
+  useEffect(() => {
+    if (savedInvoiceId || isLoadingSavedInvoice || !hasProjectTables || isQuotation || !issueDate) return
+    autoFillScheduleDeadlines(issueDate)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial fill only; issue date edits use handleIssueDateChange
+  }, [savedInvoiceId, isLoadingSavedInvoice, hasProjectTables, isQuotation, autoFillScheduleDeadlines])
 
   const updateItem = (id: string, patch: Partial<InvoiceItem>) => {
     setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)))
@@ -1853,7 +1920,7 @@ export default function AdminInvoicesPage({
               </div>
               <div>
                 <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>{docLabels.issueDateLabel.replace(/:$/, "")}</label>
-                <Input type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
+                <Input type="date" value={issueDate} onChange={(e) => handleIssueDateChange(e.target.value)} />
               </div>
               <div>
                 <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>{docLabels.dueLabel.replace(/:$/, "")}</label>
@@ -2042,7 +2109,7 @@ export default function AdminInvoicesPage({
                       </label>
                     </div>
                     <p className={cn("mb-3 text-[11px]", themeClasses.textNeutralSecondary)}>
-                      Phases 1-2 use half of (invoice total - service), phases 3-4 use half of service. Edit deadlines here.
+                      Phases 1-2 use half of (invoice total - service), phases 3-4 use half of service. Deadlines auto-fill from issue date to 25/07, split evenly across 4 phases (edit if needed).
                     </p>
                     <div className="space-y-2">
                       {paymentScheduleDisplay.map((row, rowIndex) => (

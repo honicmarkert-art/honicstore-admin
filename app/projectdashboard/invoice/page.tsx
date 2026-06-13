@@ -49,13 +49,13 @@ export default function ProjectDashboardInvoicePage() {
           },
         ],
         paymentSchedule: [
-          { phase: "1", description: "", amount: "", amountToPay: "", deadline: "01/01/26" },
-          { phase: "2", description: "", amount: "", amountToPay: "", deadline: "01/04/26" },
-          { phase: "3", description: "", amount: "", amountToPay: "", deadline: "21/05/26" },
-          { phase: "4", description: "", amount: "", amountToPay: "", deadline: "10/06/26" },
+          { phase: "1", description: "", amount: "", amountToPay: "", deadline: "" },
+          { phase: "2", description: "", amount: "", amountToPay: "", deadline: "" },
+          { phase: "3", description: "", amount: "", amountToPay: "", deadline: "" },
+          { phase: "4", description: "", amount: "", amountToPay: "", deadline: "" },
         ],
         paymentGrandTotal: "",
-        paymentDeadline: "160 Days",
+        paymentDeadline: "",
         note:
           "**1.** The above costs do not include expenses related to project documentation, including circuit simulation, block diagram development, or data analysis. Only component specifications are provided.\n\n**2.** The final cost may vary depending on design changes or additional requirements, which may result in an increase or decrease in price.\n\n**3.** This document can be used as proforma invoice or a tax invoice.\n\n**4.** The circuit casing highlighted in red indicates that its cost is not yet known. The cost will only be determined after the circuit casing has been drawn; once the price is confirmed, you will be notified.",
       }}
