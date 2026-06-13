@@ -19,6 +19,13 @@ type InvoiceItem = {
   unitPrice: number
 }
 
+type SavedLineItemCatalogEntry = {
+  key: string
+  name: string
+  quantity: number
+  unitPrice: number
+}
+
 type PaymentMethod = {
   id: string
   /** Optional, e.g. "CRDB", "M-Pesa" — shown above bank lines when set */
@@ -150,6 +157,44 @@ const PROTOTYPE_RED_KEY = "__prototypeRowRed"
 
 function money(value: number): string {
   return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function SavedItemPicker({
+  items,
+  onSelect,
+  disabled,
+  className,
+}: {
+  items: SavedLineItemCatalogEntry[]
+  onSelect: (item: SavedLineItemCatalogEntry) => void
+  disabled?: boolean
+  className?: string
+}) {
+  return (
+    <select
+      disabled={disabled || items.length === 0}
+      defaultValue=""
+      onChange={(e) => {
+        const key = e.target.value
+        if (!key) return
+        const found = items.find((item) => item.key === key)
+        if (found) onSelect(found)
+        e.target.value = ""
+      }}
+      className={cn(
+        "h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+        className
+      )}
+      aria-label="Pick a previously saved item"
+    >
+      <option value="">{items.length ? "Pick saved item…" : "No saved items yet"}</option>
+      {items.map((item) => (
+        <option key={item.key} value={item.key}>
+          {item.name} ({item.quantity} × {money(item.unitPrice)})
+        </option>
+      ))}
+    </select>
+  )
 }
 
 function isPrototypeSectionTitle(title: string): boolean {
@@ -431,6 +476,8 @@ export default function AdminInvoicesPage({
   const [items, setItems] = useState<InvoiceItem[]>([
     { id: "1", description: "Product or service", quantity: 1, unitPrice: 0 },
   ])
+  const [savedItemCatalog, setSavedItemCatalog] = useState<SavedLineItemCatalogEntry[]>([])
+  const [isLoadingSavedItems, setIsLoadingSavedItems] = useState(false)
   const [projectTables, setProjectTables] = useState<InvoiceExtraTables | undefined>(extraTables)
   const [isSavingInvoice, setIsSavingInvoice] = useState(false)
   const [isLoadingSavedInvoice, setIsLoadingSavedInvoice] = useState(false)
@@ -546,6 +593,25 @@ export default function AdminInvoicesPage({
     if (!clientNameParam) return
     setBillToName(clientNameParam)
   }, [clientNameParam, savedInvoiceId])
+
+  const refreshSavedItemCatalog = async () => {
+    setIsLoadingSavedItems(true)
+    try {
+      const res = await fetch("/api/admin/invoices/line-items?scope=all", { cache: "no-store", credentials: "include" })
+      const data = await res.json()
+      if (res.ok && data?.success && Array.isArray(data.items)) {
+        setSavedItemCatalog(data.items)
+      }
+    } catch {
+      // ignore — picker stays empty until next load
+    } finally {
+      setIsLoadingSavedItems(false)
+    }
+  }
+
+  useEffect(() => {
+    refreshSavedItemCatalog()
+  }, [])
 
   useEffect(() => {
     try {
@@ -699,6 +765,35 @@ export default function AdminInvoicesPage({
 
   const removeItem = (id: string) => {
     setItems((prev) => (prev.length > 1 ? prev.filter((item) => item.id !== id) : prev))
+  }
+
+  const applySavedItemToLine = (itemId: string, saved: SavedLineItemCatalogEntry) => {
+    updateItem(itemId, {
+      description: saved.name,
+      quantity: saved.quantity,
+      unitPrice: saved.unitPrice,
+    })
+  }
+
+  const applySavedItemToProjectRow = (sectionIndex: number, rowIndex: number, saved: SavedLineItemCatalogEntry) => {
+    setProjectTables((prev) => {
+      if (!prev?.sections) return prev
+      const sections = prev.sections.map((section, sIdx) => {
+        if (sIdx !== sectionIndex) return section
+        const itemKey = section.columns.find((c) => c.key === "item")?.key || "item"
+        const qtyKey = section.columns.find((c) => c.key === "qty")?.key
+        const unitKey = section.columns.find((c) => c.key === "unitPrice")?.key
+        const rows = section.rows.map((row, rIdx) => {
+          if (rIdx !== rowIndex) return row
+          let next = { ...row, [itemKey]: saved.name }
+          if (qtyKey) next[qtyKey] = String(saved.quantity)
+          if (unitKey) next[unitKey] = formatTzMoneyInput(String(saved.unitPrice))
+          return recomputeProjectRowLineTotal(section, next)
+        })
+        return { ...section, rows }
+      })
+      return { ...prev, sections }
+    })
   }
 
   const updatePaymentMethod = (id: string, patch: Partial<PaymentMethod>) => {
@@ -1519,6 +1614,7 @@ export default function AdminInvoicesPage({
           description: `${String(data?.invoice?.invoice_number || invoiceNumber)} saved for ${billToName.trim()}.`,
         })
       }
+      void refreshSavedItemCatalog()
       return data?.invoice
     } catch (error) {
       if (!silent) {
@@ -1867,6 +1963,26 @@ export default function AdminInvoicesPage({
                             const lineTotalK = lineTotalColumnKey(section)
                             const isAutoLineTotalField =
                               Boolean(lineTotalK && canAutoLineTotal(section) && col.key === lineTotalK)
+                            if (col.key === "item") {
+                              return (
+                                <div key={`${section.title}-${rowIndex}-${col.key}`} className="min-w-0 space-y-1">
+                                  <SavedItemPicker
+                                    items={savedItemCatalog}
+                                    disabled={isLoadingSavedItems}
+                                    onSelect={(saved) => applySavedItemToProjectRow(sectionIndex, rowIndex, saved)}
+                                  />
+                                  <Input
+                                    value={row[col.key] || ""}
+                                    onChange={(e) => updateProjectSectionCell(sectionIndex, rowIndex, col.key, e.target.value)}
+                                    placeholder={col.label}
+                                    className={cn(
+                                      "min-w-0",
+                                      prototypeSection && isPrototypeRowHighlighted(row) && "text-red-700"
+                                    )}
+                                  />
+                                </div>
+                              )
+                            }
                             return (
                               <Input
                                 key={`${section.title}-${rowIndex}-${col.key}`}
@@ -1875,7 +1991,6 @@ export default function AdminInvoicesPage({
                                 onChange={(e) => updateProjectSectionCell(sectionIndex, rowIndex, col.key, e.target.value)}
                                 placeholder={col.label}
                                 className={cn(
-                                  col.key === "item" && "min-w-0",
                                   isAutoLineTotalField && "cursor-default bg-muted/50 tabular-nums",
                                   prototypeSection && isPrototypeRowHighlighted(row) && "text-red-700"
                                 )}
@@ -1973,12 +2088,18 @@ export default function AdminInvoicesPage({
                 </div>
                 {items.map((item) => (
                   <div key={item.id} className="grid grid-cols-12 gap-2 rounded-lg border border-border/80 bg-muted/20 p-2 dark:bg-muted/10">
-                    <Input
-                      className="col-span-12 sm:col-span-5"
-                      value={item.description}
-                      placeholder="Description"
-                      onChange={(e) => updateItem(item.id, { description: e.target.value })}
-                    />
+                    <div className="col-span-12 space-y-1 sm:col-span-5">
+                      <SavedItemPicker
+                        items={savedItemCatalog}
+                        disabled={isLoadingSavedItems}
+                        onSelect={(saved) => applySavedItemToLine(item.id, saved)}
+                      />
+                      <Input
+                        value={item.description}
+                        placeholder="Description"
+                        onChange={(e) => updateItem(item.id, { description: e.target.value })}
+                      />
+                    </div>
                     <Input
                       type="number"
                       min={1}
