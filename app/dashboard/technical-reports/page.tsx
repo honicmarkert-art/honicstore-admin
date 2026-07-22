@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react"
+import { Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { ArrowLeft, FileDown, ImagePlus, Plus, Printer, RotateCcw, Trash2 } from "lucide-react"
@@ -61,6 +61,21 @@ function newSection(index: number): ReportSection {
 }
 
 export default function TechnicalReportsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="space-y-4 p-6">
+          <h1 className="text-3xl font-bold tracking-tight">Technical Report Studio</h1>
+          <p className="text-sm text-muted-foreground">Loading studio…</p>
+        </div>
+      }
+    >
+      <TechnicalReportsStudio />
+    </Suspense>
+  )
+}
+
+function TechnicalReportsStudio() {
   const { themeClasses } = useTheme()
   const { toast } = useToast()
   const router = useRouter()
@@ -476,7 +491,7 @@ export default function TechnicalReportsPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Technical Report Studio</h1>
           <p className={cn("mt-1 text-sm", themeClasses.textNeutralSecondary)}>
-            Diagnostic & repair reports with editable company details. Proforma invoice attaches separately.
+            Create and edit diagnostic and repair reports. Company details are editable; attach the proforma invoice separately.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
