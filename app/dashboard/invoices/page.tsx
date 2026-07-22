@@ -1473,10 +1473,10 @@ export default function AdminInvoicesPage({
       : ""
 
     const paymentMethodHtml = `
-      <div class="pay" style="margin-top:22px;">
-        <div class="pay-wrap">
+      <div class="pay" style="margin-top:22px;break-inside:avoid;page-break-inside:avoid;">
+        <div class="pay-wrap" style="break-inside:avoid;page-break-inside:avoid;">
           <div class="pay-head">Payment method</div>
-          <div class="pay-box">
+          <div class="pay-box" style="break-inside:avoid;page-break-inside:avoid;">
             ${paymentMethodsHtml}
           </div>
         </div>
@@ -1594,10 +1594,34 @@ export default function AdminInvoicesPage({
             th.r { text-align: right; }
             .totals { display: block; margin-top: 0; border-top: 1px solid #e5e7eb; padding-top: 20px; }
             .sum { max-width: 240px; margin-left: auto; text-align: right; }
-            .pay { margin-top: 18px; max-width: 360px; text-align: left; }
-            .pay-wrap { border: none; background: transparent; }
+            .pay {
+              margin-top: 18px;
+              max-width: 360px;
+              text-align: left;
+              break-inside: avoid;
+              page-break-inside: avoid;
+              -webkit-column-break-inside: avoid;
+            }
+            .pay-wrap {
+              border: none;
+              background: transparent;
+              break-inside: avoid;
+              page-break-inside: avoid;
+            }
             .pay-head { background: transparent; color: #111827; font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; padding: 0 0 8px; margin: 0 0 8px; border: none; border-bottom: 1px solid #e5e7eb; }
-            .pay-box { background: transparent; padding: 4px 0 0 12px; border: none; border-left: 4px solid ${blue} !important; -webkit-print-color-adjust: exact; }
+            .pay-box {
+              background: transparent;
+              padding: 4px 0 0 12px;
+              border: none;
+              border-left: 4px solid ${blue} !important;
+              -webkit-print-color-adjust: exact;
+              break-inside: avoid;
+              page-break-inside: avoid;
+            }
+            .pay-method {
+              break-inside: avoid;
+              page-break-inside: avoid;
+            }
             .pay-method + .pay-method { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e7eb; }
             .pay-m-title { font-size: 10px; font-weight: 800; color: #1e293b; margin: 0 0 6px; letter-spacing: 0.06em; text-transform: uppercase; }
             .pay-line { font-size: 12px; color: #1e293b; margin: 0 0 6px; line-height: 1.45; }
@@ -1614,7 +1638,16 @@ export default function AdminInvoicesPage({
             .extra-table td.c, .extra-table th.c { text-align: center; }
             .extra-table td.r, .extra-table th.r { text-align: right; }
             .extra-note { margin: 8px 0 0; font-size: 10px; color: #334155; line-height: 1.45; }
-            .foot { margin-top: 28px; display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; align-items: flex-end; }
+            .foot {
+              margin-top: 28px;
+              display: flex;
+              justify-content: space-between;
+              gap: 24px;
+              flex-wrap: wrap;
+              align-items: flex-end;
+              break-inside: avoid;
+              page-break-inside: avoid;
+            }
             .terms { flex: 1; min-width: 200px; font-size: 12px; line-height: 1.5; color: #4b5563; }
             .terms h4 { font-size: 12px; font-weight: 800; color: #111; margin: 10px 0 4px; }
             .sign { text-align: right; min-width: 150px; max-width: 170px; }
