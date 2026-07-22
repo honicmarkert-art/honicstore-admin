@@ -14,9 +14,7 @@ CLIENT_ADDRESS = (
     "Plot 4, Ubungo Industrial Estate\n"
     "Morogoro Road\n"
     "P.O. Box 5476\n"
-    "Dar es Salaam, Tanzania\n"
-    "Tel: +255 (0)22-2450457\n"
-    "Email: info@tsp.co.tz"
+    "Dar es Salaam, Tanzania"
 )
 LOGO_PUBLIC_URL = (
     "https://qobobocldfjhdkpjyuuq.supabase.co/storage/v1/object/public/"

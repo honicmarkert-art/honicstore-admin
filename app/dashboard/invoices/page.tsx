@@ -1327,8 +1327,27 @@ export default function AdminInvoicesPage({
       ? `<img src="${invoiceLogo}" alt="" style="height:72px;max-width:128px;object-fit:contain;display:block;" />`
       : `<div style="height:72px;width:72px;border-radius:50%;border:2px dashed #cbd5e1;display:flex;align-items:center;justify-content:center;font-size:9px;color:#9ca3af;">Logo</div>`
 
-    const billLines = [billToAddress, billToEmail, billToPhone].filter(Boolean)
-    const billContact = billLines.map((l) => `<p style="margin:2px 0;font-size:12px;color:#6b7280;">${escapeHtml(l)}</p>`).join("")
+    const addressForPdf = String(billToAddress || "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => {
+        if (!line) return false
+        // Avoid duplicating phone/email when those fields are shown separately
+        if (/^(tel|phone|email)\b/i.test(line)) return false
+        if (billToEmail && line.toLowerCase().includes(billToEmail.toLowerCase())) return false
+        if (billToPhone && line.replace(/\s/g, "").includes(billToPhone.replace(/\s/g, ""))) return false
+        return true
+      })
+      .join("\n")
+    const billContact = [
+      addressForPdf
+        ? `<p style="margin:2px 0;font-size:12px;line-height:1.5;color:#6b7280;white-space:pre-line;">${escapeHtml(addressForPdf)}</p>`
+        : "",
+      billToEmail ? `<p style="margin:2px 0;font-size:12px;color:#6b7280;">${escapeHtml(billToEmail)}</p>` : "",
+      billToPhone ? `<p style="margin:2px 0;font-size:12px;color:#6b7280;">${escapeHtml(billToPhone)}</p>` : "",
+    ]
+      .filter(Boolean)
+      .join("")
 
     const discountRow =
       discount > 0
