@@ -23,7 +23,7 @@ const saveInvoiceSchema = z.object({
     .default({ subtotal: 0, taxAmount: 0, grandTotal: 0 }),
 })
 
-async function generateNextInvoiceNumber(supabase: any): Promise<string> {
+async function generateNextInvoiceNumber(supabase: any, documentKind?: string): Promise<string> {
   const { data, error } = await supabase
     .from(INVOICES_TABLE)
     .select("invoice_number")
@@ -32,7 +32,10 @@ async function generateNextInvoiceNumber(supabase: any): Promise<string> {
   if (error) throw new Error(error.message)
 
   const year = new Date().getFullYear()
-  const pattern = new RegExp(`^INV-${year}-HCIR-(\\d+)$`)
+  const isTechReport = documentKind === "technical_report"
+  const pattern = isTechReport
+    ? new RegExp(`^TR-${year}-(\\d+)$`)
+    : new RegExp(`^INV-${year}-HCIR-(\\d+)$`)
 
   const maxNum = (data || []).reduce((max: number, row: any) => {
     const raw = String(row?.invoice_number || "").trim()
@@ -41,7 +44,7 @@ async function generateNextInvoiceNumber(supabase: any): Promise<string> {
     return Number.isFinite(n) ? Math.max(max, n) : max
   }, 0)
   const next = String(maxNum + 1).padStart(4, "0")
-  return `INV-${year}-HCIR-${next}`
+  return isTechReport ? `TR-${year}-${next}` : `INV-${year}-HCIR-${next}`
 }
 
 function getAdminClient() {
@@ -117,11 +120,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, invoice: updateResult.data })
     }
 
+    const documentKind = String(body?.documentKind || "invoice")
+    const requestedNumber = String(body?.invoiceNumber || body?.reportNumber || "").trim()
+
     let insertResult: any = null
     let lastError: any = null
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const now = new Date().toISOString()
-      const generatedInvoiceNumber = await generateNextInvoiceNumber(supabase)
+      const generatedInvoiceNumber =
+        attempt === 0 && requestedNumber
+          ? requestedNumber
+          : await generateNextInvoiceNumber(supabase, documentKind)
       const record = {
         invoice_number: generatedInvoiceNumber,
         client_name: clientName,
@@ -132,7 +141,13 @@ export async function POST(request: NextRequest) {
         tax_amount: invoice.totals.taxAmount,
         grand_total: invoice.totals.grandTotal,
         created_by: user?.id || null,
-        payload: { ...body, dashboardScope: invoice.dashboardScope, invoiceNumber: generatedInvoiceNumber },
+        payload: {
+          ...body,
+          documentKind,
+          dashboardScope: invoice.dashboardScope,
+          invoiceNumber: generatedInvoiceNumber,
+          reportNumber: documentKind === "technical_report" ? generatedInvoiceNumber : body?.reportNumber,
+        },
         created_at: now,
         updated_at: now,
       }
@@ -173,10 +188,33 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Server not configured", details: envError }, { status: 500 })
     }
 
+    const invoiceNumberLookup = String(request.nextUrl.searchParams.get("invoiceNumber") || "").trim()
+    if (invoiceNumberLookup) {
+      const { data, error } = await supabase
+        .from(INVOICES_TABLE)
+        .select("*")
+        .eq("invoice_number", invoiceNumberLookup)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (error) {
+        return NextResponse.json({ error: "Failed to fetch source document", details: error.message }, { status: 500 })
+      }
+      return NextResponse.json({ success: true, invoice: data || null })
+    }
+
     const q = String(request.nextUrl.searchParams.get("clientName") || "").trim()
     const scope = request.nextUrl.searchParams.get("scope") === "project" ? "project" : "main"
     const summaryOnly = request.nextUrl.searchParams.get("summaryOnly") === "true"
     const limit = Math.min(100, Math.max(1, Number(request.nextUrl.searchParams.get("limit") || 50)))
+    const documentKindParam = String(request.nextUrl.searchParams.get("documentKind") || "").trim()
+    const documentKind =
+      documentKindParam === "invoice" ||
+      documentKindParam === "quotation" ||
+      documentKindParam === "delivery_note" ||
+      documentKindParam === "technical_report"
+        ? documentKindParam
+        : null
 
     let invoices: any[] = []
     if (!summaryOnly) {
@@ -194,6 +232,14 @@ export async function GET(request: NextRequest) {
         query = query.or("payload->>dashboardScope.eq.project,payload->>dashboardScope.is.null")
       } else if (scope === "main") {
         query = query.or("payload->>dashboardScope.eq.main,payload->>dashboardScope.is.null")
+      }
+      if (documentKind) {
+        query = query.or(`payload->>documentKind.eq.${documentKind}`)
+      } else {
+        query = query.or(
+          "payload->>documentKind.is.null,payload->>documentKind.eq.invoice,payload->>documentKind.eq.quotation"
+        )
+        // Exclude delivery notes and technical reports from default invoice list.
       }
 
       const result = await query
@@ -234,6 +280,13 @@ export async function GET(request: NextRequest) {
       summaryQuery = summaryQuery.or("payload->>dashboardScope.eq.project,payload->>dashboardScope.is.null")
     } else if (scope === "main") {
       summaryQuery = summaryQuery.or("payload->>dashboardScope.eq.main,payload->>dashboardScope.is.null")
+    }
+    if (documentKind) {
+      summaryQuery = summaryQuery.or(`payload->>documentKind.eq.${documentKind}`)
+    } else {
+      summaryQuery = summaryQuery.or(
+        "payload->>documentKind.is.null,payload->>documentKind.eq.invoice,payload->>documentKind.eq.quotation"
+      )
     }
     const summaryResult = await summaryQuery
     const summaryRows = summaryResult.data || []

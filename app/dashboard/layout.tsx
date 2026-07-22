@@ -21,6 +21,7 @@ import {
   ShoppingCart,
   FileImage,
   ReceiptText,
+  ClipboardList,
   Building2,
   Wallet,
   AlertTriangle,
@@ -59,6 +60,10 @@ const navigation = [
   { name: "Advertisements", href: "/dashboard/advertisements", icon: FileImage },
   { name: "Invoices", href: "/dashboard/invoices", icon: ReceiptText },
   { name: "Invoice Clients", href: "/dashboard/invoices/list", icon: ReceiptText },
+  { name: "Delivery Notes", href: "/dashboard/delivery-notes", icon: ReceiptText },
+  { name: "Delivery Note Clients", href: "/dashboard/delivery-notes/list", icon: ReceiptText },
+  { name: "Technical Reports", href: "/dashboard/technical-reports", icon: ClipboardList },
+  { name: "Technical Report List", href: "/dashboard/technical-reports/list", icon: ClipboardList },
   { name: "Users", href: "/dashboard/users", icon: Users },
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ]

@@ -45,10 +45,14 @@ export default function InvoiceClientsListPage({
   dashboardScope = "main",
   studioBasePath = "/dashboard/invoices",
   listBasePath = "/dashboard/invoices/list",
+  documentKind,
+  showPaymentsAction = true,
 }: {
   dashboardScope?: "main" | "project"
   studioBasePath?: string
   listBasePath?: string
+  documentKind?: "invoice" | "quotation" | "delivery_note" | "technical_report"
+  showPaymentsAction?: boolean
 }) {
   const { themeClasses } = useTheme()
   const { formatPrice } = useCurrency()
@@ -73,9 +77,10 @@ export default function InvoiceClientsListPage({
       setError(null)
       try {
         const sourceScope = dashboardScope === "project" ? "project" : "main"
+        const docKindQs = documentKind ? `&documentKind=${encodeURIComponent(documentKind)}` : ""
         const qs = query.trim()
-          ? `?clientName=${encodeURIComponent(query.trim())}&limit=200&scope=${sourceScope}`
-          : `?limit=200&scope=${sourceScope}`
+          ? `?clientName=${encodeURIComponent(query.trim())}&limit=200&scope=${sourceScope}${docKindQs}`
+          : `?limit=200&scope=${sourceScope}${docKindQs}`
         const res = await fetch(`/api/admin/invoices${qs}`, {
           cache: "no-store",
           credentials: "include",
@@ -102,7 +107,7 @@ export default function InvoiceClientsListPage({
       ctrl.abort()
       window.clearTimeout(t)
     }
-  }, [query, reloadTick, dashboardScope])
+  }, [query, reloadTick, dashboardScope, documentKind])
 
   const deleteInvoice = async (invoiceId: string, invoiceNumber: string) => {
     const ok = window.confirm(`Delete invoice ${invoiceNumber || invoiceId}? This cannot be undone.`)
@@ -161,27 +166,46 @@ export default function InvoiceClientsListPage({
     }
   }
 
+  const isDeliveryNote = documentKind === "delivery_note"
+  const isTechnicalReport = documentKind === "technical_report"
+  const listTitle = isTechnicalReport
+    ? "Saved Technical Reports"
+    : isDeliveryNote
+      ? "Saved Delivery Notes"
+      : "Saved Invoices"
+  const backLabel = isTechnicalReport
+    ? "Back to Technical Report Studio"
+    : isDeliveryNote
+      ? "Back to Delivery Note Studio"
+      : "Back to Invoice Studio"
+  const numberColLabel = isTechnicalReport ? "Report #" : isDeliveryNote ? "Note #" : "Invoice #"
+
   return (
     <div className={cn("space-y-6", themeClasses.mainText)}>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Saved Invoices</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{listTitle}</h1>
           <p className={cn("mt-1 text-sm", themeClasses.textNeutralSecondary)}>
-            View invoices by client name and total amounts.
+            View {isTechnicalReport ? "technical reports" : isDeliveryNote ? "delivery notes" : "invoices"} by client name
+            {isTechnicalReport ? "." : " and total amounts."}
           </p>
         </div>
         <Button asChild variant="outline">
-          <Link href={studioBasePath}>Back to Invoice Studio</Link>
+          <Link href={studioBasePath}>{backLabel}</Link>
         </Button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
         <Card className={cn(themeClasses.cardBg, themeClasses.cardBorder)}>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Total invoices</CardTitle>
+            <CardTitle className="text-sm">
+              {isTechnicalReport ? "Total reports" : isDeliveryNote ? "Total delivery notes" : "Total invoices"}
+            </CardTitle>
           </CardHeader>
           <CardContent className="text-2xl font-bold">{summary.totalCount}</CardContent>
         </Card>
+        {!isDeliveryNote && !isTechnicalReport ? (
+        <>
         <Card className={cn(themeClasses.cardBg, themeClasses.cardBorder)}>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Total invoice amount</CardTitle>
@@ -200,6 +224,17 @@ export default function InvoiceClientsListPage({
           </CardHeader>
           <CardContent className="text-2xl font-bold">{formatPrice(summary.totalDue)}</CardContent>
         </Card>
+        </>
+        ) : (
+        <Card className={cn(themeClasses.cardBg, themeClasses.cardBorder, "md:col-span-3")}>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">About delivery notes</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            Delivery notes list shipped items and quantities only — not prices or payments.
+          </CardContent>
+        </Card>
+        )}
       </div>
 
       <Card className={cn(themeClasses.cardBg, themeClasses.cardBorder)}>
@@ -228,12 +263,12 @@ export default function InvoiceClientsListPage({
               <table className="w-full min-w-[720px] border-collapse text-sm">
                 <thead>
                   <tr className="border-b">
-                    <th className="px-3 py-2 text-left">Invoice #</th>
+                    <th className="px-3 py-2 text-left">{numberColLabel}</th>
                     <th className="px-3 py-2 text-left">Client</th>
-                    <th className="px-3 py-2 text-left">Issue</th>
-                    <th className="px-3 py-2 text-left">Due</th>
-                    <th className="px-3 py-2 text-right">Amount</th>
-                    <th className="px-3 py-2 text-right">Paid</th>
+                    <th className="px-3 py-2 text-left">{isDeliveryNote ? "Note date" : "Issue"}</th>
+                    <th className="px-3 py-2 text-left">{isDeliveryNote ? "Delivery date" : "Due"}</th>
+                    {!isDeliveryNote ? <th className="px-3 py-2 text-right">Amount</th> : null}
+                    {!isDeliveryNote ? <th className="px-3 py-2 text-right">Paid</th> : null}
                     <th className="px-3 py-2 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -244,8 +279,8 @@ export default function InvoiceClientsListPage({
                       <td className="px-3 py-2">{inv.client_name}</td>
                       <td className="px-3 py-2">{fmtDate(inv.issue_date)}</td>
                       <td className="px-3 py-2">{fmtDate(inv.due_date)}</td>
-                      <td className="px-3 py-2 text-right">{formatPrice(Number(inv.grand_total || 0))}</td>
-                      <td className="px-3 py-2 text-right">{formatPrice(Number(inv.total_paid || 0))}</td>
+                      {!isDeliveryNote ? <td className="px-3 py-2 text-right">{formatPrice(Number(inv.grand_total || 0))}</td> : null}
+                      {!isDeliveryNote ? <td className="px-3 py-2 text-right">{formatPrice(Number(inv.total_paid || 0))}</td> : null}
                       <td className="px-3 py-2 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <label className="inline-flex items-center gap-1 text-xs text-muted-foreground">
@@ -261,7 +296,7 @@ export default function InvoiceClientsListPage({
                             <>
                               <Button size="sm" variant="outline" disabled>Preview</Button>
                               <Button size="sm" variant="outline" disabled>Edit</Button>
-                              <Button size="sm" disabled>Payments</Button>
+                              {showPaymentsAction ? <Button size="sm" disabled>Payments</Button> : null}
                             </>
                           ) : (
                             <>
@@ -271,9 +306,11 @@ export default function InvoiceClientsListPage({
                               <Button asChild size="sm" variant="outline">
                                 <Link href={`${studioBasePath}?invoiceId=${inv.id}&mode=edit`}>Edit</Link>
                               </Button>
-                              <Button asChild size="sm">
-                                <Link href={`${listBasePath}/${inv.id}?scope=${dashboardScope}`}>Payments</Link>
-                              </Button>
+                              {showPaymentsAction ? (
+                                <Button asChild size="sm">
+                                  <Link href={`${listBasePath}/${inv.id}?scope=${dashboardScope}`}>Payments</Link>
+                                </Button>
+                              ) : null}
                             </>
                           )}
                           <Button
