@@ -1566,16 +1566,16 @@ export default function AdminInvoicesPage({
             .page-inner { position: relative; z-index: 1; }
             .sign-stamp { margin: 8px 0 0; padding: 0; text-align: right; }
             .sign-stamp img { max-height: 140px; max-width: 280px; object-fit: contain; vertical-align: bottom; opacity: 0.95; }
-            .head { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+            .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
             .brand { display: flex; align-items: center; gap: 14px; max-width: 58%; }
             .co { font-size: 18px; font-weight: 800; color: #111; letter-spacing: -0.02em; }
             .tag { font-size: 10px; font-weight: 800; color: #374151; letter-spacing: 0.12em; text-transform: uppercase; margin-top: 2px; }
             .co-addr { margin-top: 8px; padding-left: 8px; border-left: 2px solid #e2e8f0; font-size: 10px; line-height: 1.55; color: #64748b; white-space: pre-line; }
-            .doc-title-wrap { text-align: right; padding-top: 14px; }
+            .doc-title-wrap { text-align: right; }
             .inv-title { font-size: 36px; font-weight: 800; color: ${blue}; letter-spacing: 0.04em; line-height: 1; }
-            .line-wrap { margin-top: 10px; }
-            .url-row { text-align: right; font-size: 9px; font-weight: 600; margin: 0 0 6px; letter-spacing: 0.02em; }
+            .url-row { text-align: right; font-size: 9px; font-weight: 600; margin: 6px 0 0; letter-spacing: 0.02em; }
             .url-row a { color: #475569; text-decoration: none; }
+            .line-wrap { margin-top: 8px; }
             .line-rule { position: relative; min-height: 1px; }
             /* border-top prints reliably; thin background divs often disappear in “Save as PDF” */
             .line-bg { width: 100%; height: 0; margin: 0; padding: 0; border: 0; border-top: 1px solid #d1d5db; }
@@ -1683,10 +1683,10 @@ export default function AdminInvoicesPage({
               <div style="text-align:right;" class="doc-title-wrap">
                 <div class="inv-title">${escapeHtml(docLabels.title)}</div>
                 ${quoteSubtitleHtml}
+                <div class="url-row"><a href="${escapeHtml(websiteHref)}" target="_blank" rel="noopener noreferrer">${escapeHtml(websiteDisplay)}</a></div>
               </div>
             </div>
             <div class="line-wrap">
-              <div class="url-row"><a href="${escapeHtml(websiteHref)}" target="_blank" rel="noopener noreferrer">${escapeHtml(websiteDisplay)}</a></div>
               <div class="line-rule">
                 <div class="line-bg"></div>
                 <div class="line-accent"></div>
@@ -2866,8 +2866,8 @@ export default function AdminInvoicesPage({
               }}
             >
               <div className="relative z-10">
-              {/* Header */}
-              <div className="flex flex-col justify-between gap-5 px-6 pb-0 pt-6 sm:flex-row sm:items-center">
+              {/* Header — website sits on same bottom row as address end; line follows tight */}
+              <div className="flex flex-col justify-between gap-4 px-6 pb-0 pt-6 sm:flex-row sm:items-end">
                 <div className="flex max-w-[58%] items-center gap-3 sm:gap-4">
                   {invoiceLogo ? (
                     <img
@@ -2899,7 +2899,7 @@ export default function AdminInvoicesPage({
                     ) : null}
                   </div>
                 </div>
-                <div className="shrink-0 self-center pt-3 text-right sm:pt-4">
+                <div className="shrink-0 text-right">
                   <div
                     className={cn(
                       "font-extrabold tracking-wide",
@@ -2915,16 +2915,16 @@ export default function AdminInvoicesPage({
                   {isDeliveryNote && docLabels.subtitle ? (
                     <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">{docLabels.subtitle}</p>
                   ) : null}
+                  <p className="mt-1.5 text-[9px] font-semibold normal-case leading-snug tracking-normal text-slate-600 sm:text-[10px]">
+                    <a href={websiteHref} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                      {websiteDisplay}
+                    </a>
+                  </p>
                 </div>
               </div>
 
-              {/* URL above line */}
-              <div className="relative mt-3 px-6">
-                <p className="pb-1.5 text-right text-[9px] font-semibold normal-case leading-snug tracking-normal text-slate-600 opacity-100 dark:text-slate-400 sm:text-[10px]">
-                  <a href={websiteHref} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                    {websiteDisplay}
-                  </a>
-                </p>
+              {/* Divider directly under header */}
+              <div className="relative mt-2 px-6">
                 <div className="h-px w-full" style={{ background: INV.lineGray }} />
                 <div className="absolute bottom-0 left-6 h-[3px] w-24" style={{ background: INV.blue }} />
               </div>
