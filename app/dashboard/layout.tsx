@@ -379,8 +379,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
           </div>
 
-          {/* Navigation */}
-          <nav className="flex-1 space-y-1 px-2 py-4">
+          {/* Navigation — scroll when items exceed viewport */}
+          <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-2 py-4">
             {navigation.map((item) => {
               const Icon = item.icon
               

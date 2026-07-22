@@ -19,6 +19,8 @@ const projectNav = [
   { name: "Usage Tracking", href: "/projectdashboard/usage", icon: ChartNoAxesCombined },
   { name: "Invoice", href: "/projectdashboard/invoice", icon: ReceiptText },
   { name: "Invoice List", href: "/projectdashboard/invoices/list", icon: ListOrdered },
+  { name: "Delivery Note", href: "/projectdashboard/delivery-note", icon: ReceiptText },
+  { name: "Delivery Notes List", href: "/projectdashboard/delivery-notes/list", icon: ListOrdered },
 ]
 
 export default function ProjectDashboardLayout({ children }: ProjectDashboardLayoutProps) {
@@ -61,8 +63,8 @@ export default function ProjectDashboardLayout({ children }: ProjectDashboardLay
     <div className={cn("min-h-screen", themeClasses.mainBg)}>
       <div className={cn("grid min-h-screen grid-cols-1", navExpanded && "md:grid-cols-[260px_1fr]")}>
         {navExpanded ? (
-        <aside className={cn("border-r p-4 md:p-5", themeClasses.cardBg, themeClasses.cardBorder)}>
-          <div className="mb-4">
+        <aside className={cn("flex max-h-screen flex-col overflow-hidden border-r p-4 md:sticky md:top-0 md:h-screen md:p-5", themeClasses.cardBg, themeClasses.cardBorder)}>
+          <div className="mb-4 shrink-0">
             <div className="flex gap-2">
               <Button type="button" variant="outline" className="flex-1 justify-start gap-2 rounded-2xl" onClick={handleBack}>
                 <ArrowLeft className="h-4 w-4" />
@@ -74,13 +76,13 @@ export default function ProjectDashboardLayout({ children }: ProjectDashboardLay
             </div>
           </div>
 
-          <div className="mb-6 rounded-2xl border bg-muted/30 p-4">
+          <div className="mb-6 shrink-0 rounded-2xl border bg-muted/30 p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-600 dark:text-blue-300">Project</p>
             <h2 className="mt-1 text-lg font-bold">Financial Workspace</h2>
             <p className="mt-1 text-xs text-muted-foreground">Sidebar navigation only</p>
           </div>
 
-          <nav className="space-y-2">
+          <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1">
             {projectNav.map((item) => {
               const Icon = item.icon
               const active = isActive(item.href)
@@ -110,7 +112,7 @@ export default function ProjectDashboardLayout({ children }: ProjectDashboardLay
             })}
           </nav>
 
-          <div className="mt-6 border-t pt-4">
+          <div className="mt-6 shrink-0 border-t pt-4">
             <Button asChild variant="outline" className="w-full justify-start gap-2 rounded-2xl">
               <Link href="/dashboard">
                 <ArrowLeft className="h-4 w-4" />
