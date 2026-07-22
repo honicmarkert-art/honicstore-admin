@@ -228,10 +228,14 @@ export default function InvoiceClientsListPage({
         ) : (
         <Card className={cn(themeClasses.cardBg, themeClasses.cardBorder, "md:col-span-3")}>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">About delivery notes</CardTitle>
+            <CardTitle className="text-sm">
+              {isTechnicalReport ? "About technical reports" : "About delivery notes"}
+            </CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            Delivery notes list shipped items and quantities only — not prices or payments.
+            {isTechnicalReport
+              ? "Technical reports cover diagnostics and repair plans. Parts and costs go in a separate proforma invoice."
+              : "Delivery notes list shipped items and quantities only — not prices or payments."}
           </CardContent>
         </Card>
         )}
