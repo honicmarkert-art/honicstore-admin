@@ -1554,13 +1554,14 @@ export default function AdminInvoicesPage({
             .co-addr { margin-top: 8px; padding-left: 8px; border-left: 2px solid #e2e8f0; font-size: 10px; line-height: 1.55; color: #64748b; white-space: pre-line; }
             .doc-title-wrap { text-align: right; padding-top: 14px; }
             .inv-title { font-size: 36px; font-weight: 800; color: ${blue}; letter-spacing: 0.04em; line-height: 1; }
-            .line-wrap { position: relative; margin-top: 14px; min-height: 1px; }
-            .url-row { text-align: right; font-size: 9px; font-weight: 600; margin-top: 6px; letter-spacing: 0.02em; }
+            .line-wrap { margin-top: 10px; }
+            .url-row { text-align: right; font-size: 9px; font-weight: 600; margin: 0 0 6px; letter-spacing: 0.02em; }
             .url-row a { color: #475569; text-decoration: none; }
-            .items-table-title { margin: 16px 0 8px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: #0f172a; }
+            .line-rule { position: relative; min-height: 1px; }
             /* border-top prints reliably; thin background divs often disappear in “Save as PDF” */
             .line-bg { width: 100%; height: 0; margin: 0; padding: 0; border: 0; border-top: 1px solid #d1d5db; }
             .line-accent { position: absolute; left: 0; top: 0; width: 96px; height: 0; border: 0; border-top: 3px solid ${blue}; }
+            .items-table-title { margin: 16px 0 8px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: #0f172a; }
             .meta { display: flex; justify-content: space-between; margin-top: 24px; gap: 24px; }
             .to-label { font-size: 12px; font-weight: 700; color: #111; margin-bottom: 6px; }
             .to-name { font-size: 15px; font-weight: 800; color: #111; margin: 0 0 4px; }
@@ -1666,9 +1667,11 @@ export default function AdminInvoicesPage({
               </div>
             </div>
             <div class="line-wrap">
-              <div class="line-bg"></div>
-              <div class="line-accent"></div>
               <div class="url-row"><a href="${escapeHtml(websiteHref)}" target="_blank" rel="noopener noreferrer">${escapeHtml(websiteDisplay)}</a></div>
+              <div class="line-rule">
+                <div class="line-bg"></div>
+                <div class="line-accent"></div>
+              </div>
             </div>
             <div class="meta">
               <div>
@@ -2896,15 +2899,15 @@ export default function AdminInvoicesPage({
                 </div>
               </div>
 
-              {/* Line + URL */}
+              {/* URL above line */}
               <div className="relative mt-3 px-6">
-                <div className="h-px w-full" style={{ background: INV.lineGray }} />
-                <div className="absolute left-6 top-0 h-[3px] w-24" style={{ background: INV.blue }} />
-                <p className="pt-1.5 text-right text-[9px] font-semibold normal-case leading-snug tracking-normal text-slate-600 opacity-100 dark:text-slate-400 sm:text-[10px]">
+                <p className="pb-1.5 text-right text-[9px] font-semibold normal-case leading-snug tracking-normal text-slate-600 opacity-100 dark:text-slate-400 sm:text-[10px]">
                   <a href={websiteHref} target="_blank" rel="noopener noreferrer" className="hover:underline">
                     {websiteDisplay}
                   </a>
                 </p>
+                <div className="h-px w-full" style={{ background: INV.lineGray }} />
+                <div className="absolute bottom-0 left-6 h-[3px] w-24" style={{ background: INV.blue }} />
               </div>
 
               {/* Invoice to + meta */}
