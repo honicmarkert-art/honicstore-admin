@@ -2,14 +2,15 @@ export type ReportSection = {
   id: string
   title: string
   body: string
-  /** Optional status chip shown next to title, e.g. Dead / Working / Failed */
+  /** Plain-text status line under the title (no colored badges) */
   status?: string
-  statusTone?: "danger" | "ok" | "warn" | "neutral"
 }
 
 export type TechnicalReportDefaults = {
   reportNumber: string
   reportTitle: string
+  documentRevision: string
+  confidentiality: string
   toName: string
   toAddress: string
   fromName: string
@@ -22,20 +23,25 @@ export type TechnicalReportDefaults = {
   footerAddress: string
   reportDate: string
   machineName: string
+  serialNumber: string
+  application: string
   subject: string
-  attachmentNote: string
-  nextSteps: string
+  /** Single closing note: proforma attachment + approval (not repeated in body sections) */
+  closureNote: string
   preparedByName: string
   preparedByTitle: string
   sections: ReportSection[]
 }
 
-/** First seeded report: PSU diagnostic & repair plan (no parts table — proforma attached separately). */
-export const PSU_DIAGNOSTIC_REPORT: TechnicalReportDefaults = {
+/** Tanzania Steel Pipes — YXLON ANDREX SMART 583 X-ray PSU diagnostic report. */
+export const TSP_XRAY_PSU_REPORT: TechnicalReportDefaults = {
   reportNumber: "TR-2026-0001",
   reportTitle: "TECHNICAL DIAGNOSTIC & REPAIR REPORT",
-  toName: "Client Management",
-  toAddress: "",
+  documentRevision: "Rev. 00",
+  confidentiality: "Confidential — issued for Tanzania Steel Pipes Limited only",
+  toName: "Tanzania Steel Pipes Limited",
+  toAddress:
+    "Plot 4, Ubungo Industrial Estate\nMorogoro Road\nP.O. Box 5476\nDar es Salaam, Tanzania\nTel: +255 (0)22-2450457\nEmail: info@tsp.co.tz",
   fromName: "Honic Company Limited",
   fromEmail: "support@honiccompany.com",
   fromPhone: "+255 763 818138 / +255 786 957 939",
@@ -45,12 +51,12 @@ export const PSU_DIAGNOSTIC_REPORT: TechnicalReportDefaults = {
   footerEmail: "support@honiccompany.com",
   footerAddress: "Dar es Salaam, Tanzania",
   reportDate: "2026-07-22",
-  machineName: "",
-  subject: "Power Supply Unit (PSU) Inspection and Repair Plan",
-  attachmentNote:
-    "This technical report is issued together with a separate proforma invoice that lists required parts, quantities, and costs. Please review the attached proforma for procurement and budget approval.",
-  nextSteps:
-    "The machine cannot run safely in its current state. To begin the repair process, we need:\n\n1. Formal approval of this report and the repair strategy.\n2. Approval of the procurement budget (see attached proforma invoice) to import the parts.",
+  machineName: "YXLON ANDREX SMART 583 (XRS)",
+  serialNumber: "81226",
+  application: "Non-Medical / Non-Destructive Testing (NDT) — spiral steel pipes",
+  subject: "XRS Power Supply Failure – YXLON ANDREX SMART 583",
+  closureNote:
+    "Enclosure: A separate proforma invoice is attached with required parts, quantities, and costs.\n\nTo proceed with repair we require:\n1. Formal approval of this report and the recommended repair strategy.\n2. Approval of the procurement budget on the attached proforma invoice.",
   preparedByName: "Authorized Signatory",
   preparedByTitle: "Engineering / Repair Team",
   sections: [
@@ -58,58 +64,57 @@ export const PSU_DIAGNOSTIC_REPORT: TechnicalReportDefaults = {
       id: "sec-1",
       title: "1. Executive Summary",
       body:
-        "We completed an inspection (ukaguzi) of the machine’s power supply system. The power system splits electricity into different voltage stages to run the machine. We found major faults causing the machine to shut down. To restore stable, high-quality operation, we must replace one dead power module and repair two failed circuits on another board.",
-      statusTone: "neutral",
+        "We completed an inspection (ukaguzi) of the X-ray inspection system’s power supply. The power system splits electricity into different voltage stages to run the machine. We found major faults that prevent reliable startup and sustained operation. To restore stable, high-quality operation, one dead power module must be replaced and two failed circuits on another board must be repaired.",
     },
     {
-      id: "sec-2a",
-      title: "2. Diagnostic Findings — Stage 1: 5V (7A) External Power Supply",
-      status: "Completely Dead / Unstable",
-      statusTone: "danger",
+      id: "sec-2",
+      title: "2. Problem Description",
       body:
-        "This is a separate power box mounted inside the main unit. We troubleshot the system and got it to turn on, but it does not work for long. It runs for a few minutes and then goes completely off. It is completely unreliable.",
+        "The X-ray inspection system fails to start. The ANDREX SMART display and XRS Controller monitor remain blank during startup.",
     },
     {
-      id: "sec-2b",
-      title: "Stage 2: 24V (5A) Main Power Supply",
-      status: "Working Perfectly",
-      statusTone: "ok",
+      id: "sec-3a",
+      title: "3. Diagnostic Findings",
+      body:
+        "Findings are organised by power stage of the XRS power supply system.",
+    },
+    {
+      id: "sec-3b",
+      title: "3.1 Stage 1 — 5V (7A) External Power Supply",
+      status: "Status: Completely dead / unstable",
+      body:
+        "This is a separate power box mounted inside the main unit. Troubleshooting restored temporary power, but the supply does not remain operational. It runs for only a few minutes, then shuts down completely. The module is unreliable and not fit for continued service.",
+    },
+    {
+      id: "sec-3c",
+      title: "3.2 Stage 2 — 24V (5A) Main Power Supply",
+      status: "Status: Working within specification",
       body: "Voltage measurements are stable and within normal limits.",
     },
     {
-      id: "sec-2c",
-      title: "Stage 3: 27V Booster & 15V Buck Circuits",
-      status: "Failed (But Repairable)",
-      statusTone: "warn",
+      id: "sec-3d",
+      title: "3.3 Stage 3 — 27V Booster & 15V Buck Circuits",
+      status: "Status: Failed — repairable at component level",
       body:
-        "These are two separate circuits built onto the 24V power board. The 27V Booster and the 15V Buck have both failed. However, the main circuit board itself is healthy. We can fix this part by replacing the broken individual components with brand-new ones.",
-    },
-    {
-      id: "sec-3",
-      title: "3. Recommendations & Action Plan",
-      body:
-        "Full Replacement of the 5V PSU: We recommend replacing the 5V unit with a brand-new module. Repairing the old one is not reliable. A new part guarantees long-term machine efficiency and quality performance.\n\nComponent Repair for 27V & 15V Circuits: We recommend repairing these circuits by replacing the bad individual electronic components. We guarantee this will return this section to normal condition.",
+        "These two circuits are built onto the 24V power board. Both the 27V booster and the 15V buck have failed. The main board substrate remains serviceable; failed discrete components can be replaced with new parts to restore this section.",
     },
     {
       id: "sec-4",
-      title: "4. Sourcing & Timeline Challenges",
+      title: "4. Recommendations & Action Plan",
       body:
-        "The Challenge: Most of the repair components and the new 5V power supply are not available in the country.\n\nThe Solution: We must purchase and import these items from international suppliers abroad.\n\nTime Impact: Importing the parts will add some extra days of work. We will order everything immediately after you confirm that we should proceed.",
+        "5V PSU: Replace the 5V external module with a new unit. Repair of the failed module is not recommended for long-term reliability.\n\n27V / 15V circuits: Repair by replacing the failed electronic components on the board. This returns that section to normal operating condition when completed and tested.",
     },
     {
       id: "sec-5",
-      title: "5. Commercial Attachment",
+      title: "5. Sourcing & Timeline",
       body:
-        "A detailed parts list, quantities, and cost estimate are provided in the attached proforma invoice (issued separately). This report covers technical findings and the recommended repair strategy only; commercial details are in the proforma attachment.",
-    },
-    {
-      id: "sec-6",
-      title: "6. Next Steps to Proceed",
-      body:
-        "The machine cannot run safely in its current state. To begin the repair process, we need:\n\n1. Formal approval of this report and the repair strategy.\n2. Approval of the procurement budget to import the parts (see attached proforma invoice).",
+        "Most required repair components and the replacement 5V supply are not available locally and must be imported from international suppliers.\n\nImport lead time will add working days after approval. Ordering will start immediately upon confirmation to proceed.",
     },
   ],
 }
+
+/** @deprecated Use TSP_XRAY_PSU_REPORT */
+export const PSU_DIAGNOSTIC_REPORT = TSP_XRAY_PSU_REPORT
 
 export const STAMP_PUBLIC_URL =
   "https://qobobocldfjhdkpjyuuq.supabase.co/storage/v1/object/public/invoice-assets/invoices/admin/stamp/company-stamp.jpg"

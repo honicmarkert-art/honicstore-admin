@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils"
 import { useTheme } from "@/hooks/use-theme"
 import { useToast } from "@/hooks/use-toast"
 import {
-  PSU_DIAGNOSTIC_REPORT,
+  TSP_XRAY_PSU_REPORT,
   STAMP_PUBLIC_URL,
   type ReportSection,
   type TechnicalReportDefaults,
@@ -21,7 +21,8 @@ import {
 const INV = {
   blue: "#184a96",
   lineGray: "#cbd5e1",
-  rowStripe: "#f8fafc",
+  ink: "#0f172a",
+  muted: "#64748b",
 }
 
 const LOGO_STORAGE_KEY = "invoice-brand-logo"
@@ -43,20 +44,12 @@ function formatLongDate(iso: string): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
 }
 
-function statusColors(tone?: ReportSection["statusTone"]) {
-  if (tone === "ok") return { bg: "#dcfce7", fg: "#166534", border: "#86efac" }
-  if (tone === "warn") return { bg: "#fef3c7", fg: "#92400e", border: "#fcd34d" }
-  if (tone === "danger") return { bg: "#fee2e2", fg: "#991b1b", border: "#fca5a5" }
-  return { bg: "#f1f5f9", fg: "#334155", border: "#cbd5e1" }
-}
-
 function newSection(index: number): ReportSection {
   return {
     id: `sec-${Date.now()}-${index}`,
     title: `${index}. New section`,
     body: "",
     status: "",
-    statusTone: "neutral",
   }
 }
 
@@ -85,9 +78,11 @@ function TechnicalReportsStudio() {
   const mode = searchParams.get("mode")
   const isPreviewOnly = mode === "preview"
 
-  const defaults = PSU_DIAGNOSTIC_REPORT
+  const defaults = TSP_XRAY_PSU_REPORT
   const [reportNumber, setReportNumber] = useState(defaults.reportNumber)
   const [reportTitle, setReportTitle] = useState(defaults.reportTitle)
+  const [documentRevision, setDocumentRevision] = useState(defaults.documentRevision)
+  const [confidentiality, setConfidentiality] = useState(defaults.confidentiality)
   const [toName, setToName] = useState(defaults.toName)
   const [toAddress, setToAddress] = useState(defaults.toAddress)
   const [fromName, setFromName] = useState(defaults.fromName)
@@ -100,9 +95,10 @@ function TechnicalReportsStudio() {
   const [footerAddress, setFooterAddress] = useState(defaults.footerAddress)
   const [reportDate, setReportDate] = useState(defaults.reportDate)
   const [machineName, setMachineName] = useState(defaults.machineName)
+  const [serialNumber, setSerialNumber] = useState(defaults.serialNumber)
+  const [application, setApplication] = useState(defaults.application)
   const [subject, setSubject] = useState(defaults.subject)
-  const [attachmentNote, setAttachmentNote] = useState(defaults.attachmentNote)
-  const [nextSteps, setNextSteps] = useState(defaults.nextSteps)
+  const [closureNote, setClosureNote] = useState(defaults.closureNote)
   const [preparedByName, setPreparedByName] = useState(defaults.preparedByName)
   const [preparedByTitle, setPreparedByTitle] = useState(defaults.preparedByTitle)
   const [sections, setSections] = useState<ReportSection[]>(defaults.sections)
@@ -149,6 +145,8 @@ function TechnicalReportsStudio() {
         const p = inv?.payload || {}
         setReportNumber(String(inv?.invoice_number || p.reportNumber || p.invoiceNumber || ""))
         setReportTitle(String(p.reportTitle || defaults.reportTitle))
+        setDocumentRevision(String(p.documentRevision || defaults.documentRevision))
+        setConfidentiality(String(p.confidentiality || defaults.confidentiality))
         setToName(String(inv?.client_name || p.toName || p.clientName || ""))
         setToAddress(String(p.toAddress || p.clientAddress || ""))
         setFromName(String(p.fromName || defaults.fromName))
@@ -161,19 +159,25 @@ function TechnicalReportsStudio() {
         setFooterAddress(String(p.footerAddress || defaults.footerAddress))
         setReportDate(String(inv?.issue_date || p.reportDate || p.issueDate || ""))
         setMachineName(String(p.machineName || ""))
+        setSerialNumber(String(p.serialNumber || ""))
+        setApplication(String(p.application || ""))
         setSubject(String(p.subject || ""))
-        setAttachmentNote(String(p.attachmentNote || defaults.attachmentNote))
-        setNextSteps(String(p.nextSteps || defaults.nextSteps))
+        const legacyClosure = [p.attachmentNote, p.nextSteps].filter(Boolean).join("\n\n")
+        setClosureNote(String(p.closureNote || legacyClosure || defaults.closureNote))
         setPreparedByName(String(p.preparedByName || p.signerName || defaults.preparedByName))
         setPreparedByTitle(String(p.preparedByTitle || p.signerTitle || defaults.preparedByTitle))
         if (Array.isArray(p.sections) && p.sections.length) {
+          // Drop duplicated closing sections if older drafts still contain them
+          const filtered = p.sections.filter((s: any) => {
+            const t = String(s.title || "").toLowerCase()
+            return !t.includes("commercial attachment") && !t.includes("next steps")
+          })
           setSections(
-            p.sections.map((s: any, i: number) => ({
+            (filtered.length ? filtered : p.sections).map((s: any, i: number) => ({
               id: String(s.id || `sec-${i}`),
               title: String(s.title || ""),
               body: String(s.body || ""),
               status: String(s.status || ""),
-              statusTone: (s.statusTone as ReportSection["statusTone"]) || "neutral",
             }))
           )
         }
@@ -256,7 +260,6 @@ function TechnicalReportsStudio() {
   const updateSection = (id: string, patch: Partial<ReportSection>) => {
     setSections((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)))
   }
-
   const addSection = () => setSections((prev) => [...prev, newSection(prev.length + 1)])
   const removeSection = (id: string) => setSections((prev) => (prev.length > 1 ? prev.filter((s) => s.id !== id) : prev))
 
@@ -267,6 +270,8 @@ function TechnicalReportsStudio() {
     invoiceNumber: reportNumber,
     reportNumber,
     reportTitle,
+    documentRevision,
+    confidentiality,
     clientName: toName.trim() || "Client",
     clientAddress: toAddress,
     toName,
@@ -282,9 +287,10 @@ function TechnicalReportsStudio() {
     issueDate: reportDate,
     reportDate,
     machineName,
+    serialNumber,
+    application,
     subject,
-    attachmentNote,
-    nextSteps,
+    closureNote,
     preparedByName,
     preparedByTitle,
     signerName: preparedByName,
@@ -345,16 +351,16 @@ function TechnicalReportsStudio() {
     () =>
       sections
         .map((sec) => {
-          const tone = statusColors(sec.statusTone)
           const statusHtml = sec.status?.trim()
-            ? `<span style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;background:${tone.bg};color:${tone.fg};border:1px solid ${tone.border};vertical-align:middle;">${escapeHtml(sec.status.trim())}</span>`
+            ? `<p style="margin:0 0 6px;font-size:11px;font-style:italic;color:#475569;">${escapeHtml(sec.status.trim())}</p>`
             : ""
           return `
-            <section style="margin:0 0 18px;">
-              <h3 style="margin:0 0 8px;font-size:13px;font-weight:800;color:#0f172a;letter-spacing:0.02em;">
-                ${escapeHtml(sec.title)}${statusHtml}
+            <section style="margin:0 0 16px;padding-bottom:14px;border-bottom:1px solid #e2e8f0;">
+              <h3 style="margin:0 0 6px;font-size:12px;font-weight:800;color:#0f172a;letter-spacing:0.04em;text-transform:uppercase;">
+                ${escapeHtml(sec.title)}
               </h3>
-              <p style="margin:0;font-size:12px;line-height:1.65;color:#334155;white-space:pre-line;">${escapeHtml(sec.body || "—")}</p>
+              ${statusHtml}
+              <p style="margin:0;font-size:12px;line-height:1.7;color:#334155;white-space:pre-line;">${escapeHtml(sec.body || "—")}</p>
             </section>`
         })
         .join(""),
@@ -367,90 +373,100 @@ function TechnicalReportsStudio() {
       if (!saved && !savedId) return
     }
     const logoHtml = invoiceLogo
-      ? `<img src="${invoiceLogo}" alt="" style="height:64px;max-width:120px;object-fit:contain;" />`
-      : `<div style="height:56px;width:56px;border-radius:50%;border:2px dashed #cbd5e1;display:flex;align-items:center;justify-content:center;font-size:9px;color:#9ca3af;">Logo</div>`
+      ? `<img src="${invoiceLogo}" alt="" style="height:56px;max-width:110px;object-fit:contain;" />`
+      : ""
     const stampHtml = stampImage
-      ? `<img src="${stampImage}" alt="" style="max-height:120px;max-width:220px;object-fit:contain;margin-top:10px;" />`
+      ? `<img src="${stampImage}" alt="" style="max-height:110px;max-width:200px;object-fit:contain;margin-top:8px;" />`
       : ""
     const sigHtml = signatureImage
-      ? `<img src="${signatureImage}" alt="" style="height:48px;max-width:160px;object-fit:contain;margin:6px 0;" />`
+      ? `<img src="${signatureImage}" alt="" style="height:44px;max-width:150px;object-fit:contain;margin:6px 0;" />`
       : ""
 
     const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportNumber)}.pdf</title>
       <style>
-        @page { size: A4; margin: 14mm; }
-        body { margin:0; font-family: "Segoe UI", Arial, sans-serif; color:#0f172a; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+        @page { size: A4; margin: 16mm 14mm 18mm; }
+        body { margin:0; font-family: "Segoe UI", Calibri, Arial, sans-serif; color:#0f172a; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
         .wrap { max-width:780px; margin:0 auto; }
-        .head { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; }
-        .co { font-size:16px; font-weight:800; }
-        .tag { font-size:10px; letter-spacing:0.12em; color:#64748b; font-weight:700; margin-top:2px; }
-        .title { font-size:20px; font-weight:900; letter-spacing:0.04em; color:${INV.blue}; text-align:right; }
-        .meta-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:18px; }
-        .label { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; color:#64748b; }
-        .value { font-size:13px; font-weight:700; margin-top:4px; }
-        .muted { font-size:11px; color:#64748b; white-space:pre-line; margin-top:4px; }
-        .line { height:1px; background:${INV.lineGray}; margin:14px 0 4px; position:relative; }
-        .line:after { content:""; position:absolute; left:0; top:0; height:3px; width:96px; background:${INV.blue}; }
-        .attach { margin:16px 0; padding:12px 14px; border-left:4px solid ${INV.blue}; background:#f8fafc; font-size:12px; line-height:1.55; color:#334155; }
-        .attach strong { display:block; margin-bottom:4px; color:#0f172a; font-size:11px; letter-spacing:0.06em; text-transform:uppercase; }
-        .sign { text-align:right; margin-top:28px; }
-        .url { text-align:right; font-size:9px; font-weight:600; margin-top:6px; }
+        .band { height:4px; background:${INV.blue}; }
+        .head { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; padding:14px 0 10px; }
+        .co { font-size:15px; font-weight:800; letter-spacing:0.01em; }
+        .tag { font-size:9px; letter-spacing:0.14em; color:#64748b; font-weight:700; margin-top:3px; text-transform:uppercase; }
+        .doc-type { font-size:18px; font-weight:900; letter-spacing:0.08em; color:${INV.blue}; text-align:right; }
+        .meta-table, .equip-table { width:100%; border-collapse:collapse; margin-top:12px; font-size:11px; }
+        .meta-table td, .equip-table td { border:1px solid #cbd5e1; padding:7px 9px; vertical-align:top; }
+        .meta-table .k, .equip-table .k { width:28%; background:#f8fafc; font-weight:700; color:#334155; text-transform:uppercase; letter-spacing:0.04em; font-size:9px; }
+        .subject { margin:14px 0 6px; padding:10px 12px; border:1px solid #cbd5e1; background:#fff; }
+        .subject .k { font-size:9px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#64748b; }
+        .subject .v { margin-top:4px; font-size:13px; font-weight:700; color:#0f172a; }
+        .body-title { margin:18px 0 12px; font-size:13px; font-weight:900; letter-spacing:0.06em; text-transform:uppercase; color:#0f172a; border-bottom:2px solid ${INV.blue}; padding-bottom:6px; }
+        .closure { margin-top:8px; border:1px solid #cbd5e1; }
+        .closure-h { background:#184a96; color:#fff; font-size:10px; font-weight:800; letter-spacing:0.1em; text-transform:uppercase; padding:8px 12px; }
+        .closure-b { padding:12px; font-size:12px; line-height:1.65; color:#334155; white-space:pre-line; }
+        .sign { margin-top:28px; display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+        .sign .box { border-top:1px solid #94a3b8; padding-top:10px; }
+        .sign .lbl { font-size:9px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#64748b; }
+        .footer { margin-top:28px; border-top:2px solid ${INV.blue}; padding-top:10px; }
+        .footer-row { display:flex; justify-content:space-between; gap:10px; font-size:9px; color:#64748b; }
+        .conf { margin-top:6px; font-size:9px; font-style:italic; color:#64748b; }
+        .url { text-align:right; font-size:9px; font-weight:600; margin-top:4px; }
         .url a { color:#475569; text-decoration:none; }
       </style></head><body>
       <div class="wrap">
+        <div class="band"></div>
         <div class="head">
           <div style="display:flex;gap:12px;align-items:center;">
             ${logoHtml}
             <div>
               <div class="co">${escapeHtml(fromName)}</div>
               <div class="tag">${escapeHtml(companyTagline)}</div>
-              <div class="muted">${escapeHtml(fromEmail)} · ${escapeHtml(fromPhone)}</div>
+              <div style="font-size:10px;color:#64748b;margin-top:4px;">${escapeHtml(fromEmail)} · ${escapeHtml(fromPhone)}</div>
             </div>
           </div>
           <div>
-            <div class="title">TECHNICAL REPORT</div>
-            <div style="text-align:right;font-size:12px;font-weight:800;margin-top:6px;">${escapeHtml(reportNumber)}</div>
-            <div style="text-align:right;font-size:11px;color:#64748b;margin-top:2px;">${escapeHtml(formatLongDate(reportDate))}</div>
+            <div class="doc-type">TECHNICAL REPORT</div>
+            <div class="url"><a href="${escapeHtml(websiteHref)}">${escapeHtml(websiteDisplay)}</a></div>
           </div>
         </div>
-        <div class="line"></div>
-        <div class="url"><a href="${escapeHtml(websiteHref)}">${escapeHtml(websiteDisplay)}</a></div>
-        <div class="meta-grid">
-          <div>
-            <div class="label">To</div>
-            <div class="value">${escapeHtml(toName || "Client")}</div>
-            ${toAddress.trim() ? `<div class="muted">${escapeHtml(toAddress.trim())}</div>` : ""}
-          </div>
-          <div>
-            <div class="label">Machine / Equipment</div>
-            <div class="value">${escapeHtml(machineName || "—")}</div>
-            <div class="label" style="margin-top:10px;">Subject</div>
-            <div class="value" style="font-size:12px;font-weight:600;">${escapeHtml(subject || "—")}</div>
-          </div>
+        <table class="meta-table">
+          <tr><td class="k">Document no.</td><td>${escapeHtml(reportNumber)}</td><td class="k">Date</td><td>${escapeHtml(formatLongDate(reportDate))}</td></tr>
+          <tr><td class="k">Revision</td><td>${escapeHtml(documentRevision || "Rev. 00")}</td><td class="k">Pages</td><td>As printed</td></tr>
+        </table>
+        <table class="equip-table">
+          <tr><td class="k">Prepared for</td><td><strong>${escapeHtml(toName || "Client")}</strong>${toAddress.trim() ? `<div style="margin-top:4px;white-space:pre-line;color:#64748b;font-size:10px;">${escapeHtml(toAddress.trim())}</div>` : ""}</td></tr>
+          <tr><td class="k">Inspection system</td><td>${escapeHtml(machineName || "—")}</td></tr>
+          <tr><td class="k">Serial number</td><td>${escapeHtml(serialNumber || "—")}</td></tr>
+          <tr><td class="k">Application</td><td>${escapeHtml(application || "—")}</td></tr>
+        </table>
+        <div class="subject">
+          <div class="k">Subject</div>
+          <div class="v">${escapeHtml(subject || "—")}</div>
         </div>
-        <h2 style="margin:22px 0 14px;font-size:14px;font-weight:900;letter-spacing:0.04em;color:#0f172a;">${escapeHtml(reportTitle)}</h2>
+        <div class="body-title">${escapeHtml(reportTitle)}</div>
         ${sectionsHtml}
-        <div class="attach">
-          <strong>Attachment</strong>
-          ${escapeHtml(attachmentNote)}
+        <div class="closure">
+          <div class="closure-h">Document closure — attachment &amp; approval</div>
+          <div class="closure-b">${escapeHtml(closureNote)}</div>
         </div>
-        <section style="margin:18px 0;">
-          <h3 style="margin:0 0 8px;font-size:13px;font-weight:800;">Next Steps</h3>
-          <p style="margin:0;font-size:12px;line-height:1.65;color:#334155;white-space:pre-line;">${escapeHtml(nextSteps)}</p>
-        </section>
         <div class="sign">
-          <div style="font-size:11px;color:#64748b;">Report prepared by</div>
-          <div style="font-family:Georgia,serif;font-style:italic;font-size:16px;margin-top:4px;">${escapeHtml(preparedByName)}</div>
-          ${sigHtml}
-          <div style="font-size:11px;color:#64748b;margin-top:4px;">${escapeHtml(preparedByTitle)}</div>
-          <div style="font-size:11px;font-weight:700;margin-top:2px;">${escapeHtml(fromName)}</div>
-          ${stampHtml}
+          <div class="box">
+            <div class="lbl">Prepared by</div>
+            <div style="font-family:Georgia,serif;font-style:italic;font-size:15px;margin-top:8px;">${escapeHtml(preparedByName)}</div>
+            ${sigHtml}
+            <div style="font-size:11px;color:#64748b;margin-top:4px;">${escapeHtml(preparedByTitle)}</div>
+            <div style="font-size:11px;font-weight:700;">${escapeHtml(fromName)}</div>
+          </div>
+          <div class="box" style="text-align:right;">
+            <div class="lbl">Company authorisation</div>
+            ${stampHtml}
+          </div>
         </div>
-        <div class="line" style="margin-top:28px;"></div>
-        <div style="display:flex;justify-content:space-between;gap:12px;font-size:10px;color:#64748b;margin-top:10px;">
-          <span>${escapeHtml(footerPhone)}</span>
-          <span>${escapeHtml(footerEmail)}</span>
-          <span>${escapeHtml(footerAddress)}</span>
+        <div class="footer">
+          <div class="footer-row">
+            <span>${escapeHtml(footerPhone)}</span>
+            <span>${escapeHtml(footerEmail)}</span>
+            <span>${escapeHtml(footerAddress)}</span>
+          </div>
+          <div class="conf">${escapeHtml(confidentiality)}</div>
         </div>
       </div>
       </body></html>`
@@ -475,14 +491,20 @@ function TechnicalReportsStudio() {
     }, 400)
   }
 
-  const loadPsuTemplate = () => {
-    const d: TechnicalReportDefaults = PSU_DIAGNOSTIC_REPORT
+  const loadTspTemplate = () => {
+    const d: TechnicalReportDefaults = TSP_XRAY_PSU_REPORT
     setReportTitle(d.reportTitle)
+    setDocumentRevision(d.documentRevision)
+    setConfidentiality(d.confidentiality)
+    setToName(d.toName)
+    setToAddress(d.toAddress)
     setSubject(d.subject)
-    setAttachmentNote(d.attachmentNote)
-    setNextSteps(d.nextSteps)
+    setMachineName(d.machineName)
+    setSerialNumber(d.serialNumber)
+    setApplication(d.application)
+    setClosureNote(d.closureNote)
     setSections(d.sections.map((s) => ({ ...s, id: `${s.id}-${Date.now()}` })))
-    toast({ title: "Template loaded", description: "PSU diagnostic & repair report content applied." })
+    toast({ title: "Template loaded", description: "TSP X-ray PSU diagnostic report applied." })
   }
 
   return (
@@ -491,7 +513,7 @@ function TechnicalReportsStudio() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Technical Report Studio</h1>
           <p className={cn("mt-1 text-sm", themeClasses.textNeutralSecondary)}>
-            Create and edit diagnostic and repair reports. Company details are editable; attach the proforma invoice separately.
+            Formal diagnostic reports for clients. Proforma invoice attaches separately — not repeated in the body.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -503,8 +525,8 @@ function TechnicalReportsStudio() {
           </Button>
           {!isPreviewOnly ? (
             <>
-              <Button type="button" size="sm" variant="outline" onClick={loadPsuTemplate}>
-                Load PSU template
+              <Button type="button" size="sm" variant="outline" onClick={loadTspTemplate}>
+                Load TSP X-ray template
               </Button>
               <Button type="button" size="sm" onClick={() => saveReport(false)} disabled={isSaving || isLoading}>
                 {isSaving ? "Saving…" : "Save Report"}
@@ -531,12 +553,20 @@ function TechnicalReportsStudio() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Report #</label>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Document no.</label>
                   <Input value={reportNumber} onChange={(e) => setReportNumber(e.target.value)} />
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium text-muted-foreground">Date</label>
                   <Input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Revision</label>
+                  <Input value={documentRevision} onChange={(e) => setDocumentRevision(e.target.value)} />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Confidentiality line</label>
+                  <Input value={confidentiality} onChange={(e) => setConfidentiality(e.target.value)} />
                 </div>
               </div>
               <div>
@@ -548,21 +578,27 @@ function TechnicalReportsStudio() {
                 <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Machine / Equipment</label>
-                <Input
-                  value={machineName}
-                  onChange={(e) => setMachineName(e.target.value)}
-                  placeholder="Machine name or model"
-                />
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Inspection system</label>
+                <Input value={machineName} onChange={(e) => setMachineName(e.target.value)} placeholder="e.g. YXLON ANDREX SMART 583" />
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Serial number</label>
+                  <Input value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Application</label>
+                  <Input value={application} onChange={(e) => setApplication(e.target.value)} />
+                </div>
               </div>
 
-              <div className="rounded-lg border border-border/70 p-3 space-y-3">
+              <div className="space-y-3 rounded-lg border border-border/70 p-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Company (From)</p>
-                <Input value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder="Company name" />
-                <Input value={companyTagline} onChange={(e) => setCompanyTagline(e.target.value)} placeholder="Tagline" />
-                <Input value={fromEmail} onChange={(e) => setFromEmail(e.target.value)} placeholder="Email" />
-                <Input value={fromPhone} onChange={(e) => setFromPhone(e.target.value)} placeholder="Phone" />
-                <Input value={companyWebsite} onChange={(e) => setCompanyWebsite(e.target.value)} placeholder="Website" />
+                <Input value={fromName} onChange={(e) => setFromName(e.target.value)} />
+                <Input value={companyTagline} onChange={(e) => setCompanyTagline(e.target.value)} />
+                <Input value={fromEmail} onChange={(e) => setFromEmail(e.target.value)} />
+                <Input value={fromPhone} onChange={(e) => setFromPhone(e.target.value)} />
+                <Input value={companyWebsite} onChange={(e) => setCompanyWebsite(e.target.value)} />
                 <div className="flex flex-wrap gap-2">
                   <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
                   <Button type="button" size="sm" variant="outline" className="gap-1" onClick={() => logoInputRef.current?.click()}>
@@ -574,19 +610,22 @@ function TechnicalReportsStudio() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-border/70 p-3 space-y-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Client (To)</p>
-                <Input value={toName} onChange={(e) => setToName(e.target.value)} placeholder="Client / management" />
-                <Textarea value={toAddress} onChange={(e) => setToAddress(e.target.value)} placeholder="Address" rows={3} />
+              <div className="space-y-3 rounded-lg border border-border/70 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Prepared for (Client)</p>
+                <Input value={toName} onChange={(e) => setToName(e.target.value)} />
+                <Textarea value={toAddress} onChange={(e) => setToAddress(e.target.value)} rows={4} />
               </div>
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Sections</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Body sections</p>
                   <Button type="button" size="sm" variant="outline" className="gap-1" onClick={addSection}>
                     <Plus className="h-3.5 w-3.5" /> Add
                   </Button>
                 </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Do not add “Next steps” or “Attachment” sections here — use Document closure below once.
+                </p>
                 {sections.map((sec) => (
                   <div key={sec.id} className="space-y-2 rounded-lg border border-border/80 bg-muted/20 p-2">
                     <div className="flex gap-2">
@@ -600,27 +639,11 @@ function TechnicalReportsStudio() {
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <Input
-                        value={sec.status || ""}
-                        onChange={(e) => updateSection(sec.id, { status: e.target.value })}
-                        placeholder="Status chip (optional)"
-                      />
-                      <select
-                        className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-                        value={sec.statusTone || "neutral"}
-                        onChange={(e) =>
-                          updateSection(sec.id, {
-                            statusTone: e.target.value as ReportSection["statusTone"],
-                          })
-                        }
-                      >
-                        <option value="neutral">Neutral</option>
-                        <option value="ok">OK / Working</option>
-                        <option value="warn">Warn / Repairable</option>
-                        <option value="danger">Danger / Failed</option>
-                      </select>
-                    </div>
+                    <Input
+                      value={sec.status || ""}
+                      onChange={(e) => updateSection(sec.id, { status: e.target.value })}
+                      placeholder='Optional status line, e.g. "Status: Working within specification"'
+                    />
                     <Textarea
                       value={sec.body}
                       onChange={(e) => updateSection(sec.id, { body: e.target.value })}
@@ -632,12 +655,10 @@ function TechnicalReportsStudio() {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Proforma attachment note</label>
-                <Textarea value={attachmentNote} onChange={(e) => setAttachmentNote(e.target.value)} rows={3} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Next steps</label>
-                <Textarea value={nextSteps} onChange={(e) => setNextSteps(e.target.value)} rows={4} />
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Document closure (attachment + approval — single block)
+                </label>
+                <Textarea value={closureNote} onChange={(e) => setClosureNote(e.target.value)} rows={5} />
               </div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -697,118 +718,157 @@ function TechnicalReportsStudio() {
             <CardTitle className="text-base">Preview</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className={cn("mx-auto max-w-3xl bg-white text-slate-900 shadow-sm print:shadow-none", isLoading && "opacity-60")}>
-              <div className="px-6 pt-6">
+            <div className={cn("mx-auto max-w-3xl bg-white text-slate-900 shadow-sm print:max-w-none print:shadow-none", isLoading && "opacity-60")}>
+              <div className="h-1 w-full" style={{ background: INV.blue }} />
+              <div className="px-6 pt-5 pb-6">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div className="flex items-center gap-3">
                     {invoiceLogo ? (
-                      <img src={invoiceLogo} alt="" className="h-16 w-auto max-w-[120px] object-contain" />
+                      <img src={invoiceLogo} alt="" className="h-14 w-auto max-w-[110px] object-contain" />
                     ) : (
-                      <div className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-dashed border-slate-300 text-[9px] text-slate-400">
+                      <div className="flex h-12 w-12 items-center justify-center border border-dashed border-slate-300 text-[9px] text-slate-400">
                         Logo
                       </div>
                     )}
                     <div>
-                      <p className="text-base font-extrabold">{fromName}</p>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{companyTagline}</p>
-                      <p className="mt-1 text-[11px] text-slate-500">
+                      <p className="text-[15px] font-extrabold tracking-tight">{fromName}</p>
+                      <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-500">{companyTagline}</p>
+                      <p className="mt-1 text-[10px] text-slate-500">
                         {fromEmail} · {fromPhone}
                       </p>
                     </div>
                   </div>
                   <div className="text-left sm:text-right">
-                    <p className="text-xl font-black tracking-wide" style={{ color: INV.blue }}>
+                    <p className="text-lg font-black tracking-[0.08em]" style={{ color: INV.blue }}>
                       TECHNICAL REPORT
                     </p>
-                    <p className="mt-1 text-sm font-extrabold">{reportNumber}</p>
-                    <p className="text-xs text-slate-500">{formatLongDate(reportDate)}</p>
+                    <p className="mt-1 text-[10px] font-semibold text-slate-600">
+                      <a href={websiteHref} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                        {websiteDisplay}
+                      </a>
+                    </p>
                   </div>
                 </div>
-                <div className="relative mt-4">
-                  <div className="h-px w-full" style={{ background: INV.lineGray }} />
-                  <div className="absolute left-0 top-0 h-[3px] w-24" style={{ background: INV.blue }} />
-                  <p className="pt-1.5 text-right text-[10px] font-semibold text-slate-600">
-                    <a href={websiteHref} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                      {websiteDisplay}
-                    </a>
-                  </p>
+
+                <table className="mt-4 w-full border-collapse text-[11px]">
+                  <tbody>
+                    <tr>
+                      <td className="w-[22%] border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">
+                        Document no.
+                      </td>
+                      <td className="border border-slate-300 px-2.5 py-1.5 font-semibold">{reportNumber}</td>
+                      <td className="w-[14%] border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">
+                        Date
+                      </td>
+                      <td className="border border-slate-300 px-2.5 py-1.5">{formatLongDate(reportDate)}</td>
+                    </tr>
+                    <tr>
+                      <td className="border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">
+                        Revision
+                      </td>
+                      <td className="border border-slate-300 px-2.5 py-1.5">{documentRevision || "Rev. 00"}</td>
+                      <td className="border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">
+                        Type
+                      </td>
+                      <td className="border border-slate-300 px-2.5 py-1.5">Diagnostic &amp; repair</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <table className="mt-3 w-full border-collapse text-[11px]">
+                  <tbody>
+                    <tr>
+                      <td className="w-[28%] border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">
+                        Prepared for
+                      </td>
+                      <td className="border border-slate-300 px-2.5 py-1.5">
+                        <p className="font-bold">{toName || "Client"}</p>
+                        {toAddress.trim() ? (
+                          <p className="mt-1 whitespace-pre-line text-[10px] text-slate-500">{toAddress.trim()}</p>
+                        ) : null}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">
+                        Inspection system
+                      </td>
+                      <td className="border border-slate-300 px-2.5 py-1.5 font-semibold">{machineName || "—"}</td>
+                    </tr>
+                    <tr>
+                      <td className="border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">
+                        Serial number
+                      </td>
+                      <td className="border border-slate-300 px-2.5 py-1.5">{serialNumber || "—"}</td>
+                    </tr>
+                    <tr>
+                      <td className="border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">
+                        Application
+                      </td>
+                      <td className="border border-slate-300 px-2.5 py-1.5">{application || "—"}</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <div className="mt-3 border border-slate-300 px-3 py-2.5">
+                  <p className="text-[9px] font-extrabold uppercase tracking-[0.08em] text-slate-500">Subject</p>
+                  <p className="mt-1 text-sm font-bold text-slate-900">{subject || "—"}</p>
                 </div>
 
-                <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2">
-                  <div>
-                    <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-500">To</p>
-                    <p className="mt-1 text-[15px] font-extrabold">{toName || "Client"}</p>
-                    {toAddress.trim() ? (
-                      <p className="mt-1 whitespace-pre-line text-xs text-slate-500">{toAddress.trim()}</p>
+                <h2
+                  className="mt-5 border-b-2 pb-1.5 text-[12px] font-black uppercase tracking-[0.06em] text-slate-900"
+                  style={{ borderColor: INV.blue }}
+                >
+                  {reportTitle}
+                </h2>
+
+                <div className="mt-4 space-y-0">
+                  {sections.map((sec) => (
+                    <section key={sec.id} className="border-b border-slate-200 py-3.5 last:border-b-0">
+                      <h3 className="text-[11px] font-extrabold uppercase tracking-[0.04em] text-slate-900">{sec.title}</h3>
+                      {sec.status?.trim() ? (
+                        <p className="mt-1 text-[11px] italic text-slate-600">{sec.status.trim()}</p>
+                      ) : null}
+                      <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-slate-600">{sec.body || "—"}</p>
+                    </section>
+                  ))}
+                </div>
+
+                <div className="mt-5 overflow-hidden border border-slate-300">
+                  <div className="px-3 py-2 text-[10px] font-extrabold uppercase tracking-[0.1em] text-white" style={{ background: INV.blue }}>
+                    Document closure — attachment &amp; approval
+                  </div>
+                  <p className="whitespace-pre-line px-3 py-3 text-xs leading-relaxed text-slate-600">{closureNote}</p>
+                </div>
+
+                <div className="mt-8 grid grid-cols-1 gap-8 sm:grid-cols-2">
+                  <div className="border-t border-slate-400 pt-3">
+                    <p className="text-[9px] font-extrabold uppercase tracking-[0.08em] text-slate-500">Prepared by</p>
+                    <p className="mt-2 font-['Georgia',serif] text-base italic text-slate-700">{preparedByName}</p>
+                    {signatureImage ? (
+                      <img src={signatureImage} alt="" className="mt-2 block h-11 max-w-[150px] object-contain" />
+                    ) : null}
+                    <p className="mt-1 text-xs text-slate-500">{preparedByTitle}</p>
+                    <p className="text-xs font-bold text-slate-800">{fromName}</p>
+                  </div>
+                  <div className="border-t border-slate-400 pt-3 text-left sm:text-right">
+                    <p className="text-[9px] font-extrabold uppercase tracking-[0.08em] text-slate-500">Company authorisation</p>
+                    {stampImage ? (
+                      <img
+                        src={stampImage}
+                        alt=""
+                        className="mt-3 block h-24 w-auto max-w-[200px] object-contain opacity-95 sm:ml-auto"
+                      />
                     ) : null}
                   </div>
-                  <div>
-                    <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-500">Machine / Equipment</p>
-                    <p className="mt-1 text-sm font-bold">{machineName || "—"}</p>
-                    <p className="mt-3 text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-500">Subject</p>
-                    <p className="mt-1 text-sm font-semibold text-slate-800">{subject || "—"}</p>
-                  </div>
                 </div>
 
-                <h2 className="mt-6 text-sm font-black tracking-wide text-slate-900">{reportTitle}</h2>
-
-                <div className="mt-4 space-y-5">
-                  {sections.map((sec) => {
-                    const tone = statusColors(sec.statusTone)
-                    return (
-                      <section key={sec.id}>
-                        <h3 className="text-[13px] font-extrabold text-slate-900">
-                          {sec.title}
-                          {sec.status?.trim() ? (
-                            <span
-                              className="ml-2 inline-block rounded-full border px-2 py-0.5 text-[10px] font-bold align-middle"
-                              style={{ background: tone.bg, color: tone.fg, borderColor: tone.border }}
-                            >
-                              {sec.status.trim()}
-                            </span>
-                          ) : null}
-                        </h3>
-                        <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-slate-600">{sec.body || "—"}</p>
-                      </section>
-                    )
-                  })}
-                </div>
-
-                <div className="mt-6 border-l-4 bg-slate-50 px-4 py-3" style={{ borderColor: INV.blue }}>
-                  <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-800">Attachment</p>
-                  <p className="mt-1 text-xs leading-relaxed text-slate-600">{attachmentNote}</p>
-                </div>
-
-                <section className="mt-6">
-                  <h3 className="text-[13px] font-extrabold text-slate-900">Next Steps</h3>
-                  <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-slate-600">{nextSteps}</p>
-                </section>
-
-                <div className="mt-8 pb-2 text-right">
-                  <p className="text-[10px] text-slate-500">Report prepared by</p>
-                  <p className="mt-1 font-['Georgia',serif] text-lg italic text-slate-700">{preparedByName}</p>
-                  {signatureImage ? (
-                    <img src={signatureImage} alt="" className="ml-auto mt-2 block h-12 max-w-[160px] object-contain" />
-                  ) : null}
-                  <p className="mt-1 text-xs text-slate-500">{preparedByTitle}</p>
-                  <p className="text-xs font-bold text-slate-800">{fromName}</p>
-                  {stampImage ? (
-                    <img
-                      src={stampImage}
-                      alt=""
-                      className="ml-auto mt-3 block h-28 w-auto max-w-[220px] object-contain opacity-95"
-                    />
-                  ) : null}
-                </div>
-
-                <div className="relative mt-6 pb-5">
-                  <div className="h-px w-full" style={{ background: INV.lineGray }} />
-                  <div className="absolute right-0 top-0 h-[3px] w-24" style={{ background: INV.blue }} />
-                  <div className="mt-3 flex flex-wrap justify-between gap-2 text-[10px] text-slate-500">
+                <div className="mt-8 border-t-2 pt-3" style={{ borderColor: INV.blue }}>
+                  <div className="flex flex-wrap justify-between gap-2 text-[9px] text-slate-500">
                     <span>{footerPhone}</span>
                     <span>{footerEmail}</span>
                     <span>{footerAddress}</span>
                   </div>
+                  <p className="mt-2 text-[9px] italic text-slate-500">{confidentiality}</p>
                 </div>
               </div>
             </div>

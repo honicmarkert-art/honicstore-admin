@@ -1,11 +1,10 @@
-"""Seed first PSU technical diagnostic report into invoices table."""
+"""Update TR-2026-0001 to professional TSP X-ray PSU report layout/content."""
 import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib import error, parse, request
 
-# Import defaults by reading the TS file is awkward — duplicate payload here aligned with lib/technical-report-defaults.ts
 REPORT_NUMBER = "TR-2026-0001"
 STAMP_PUBLIC_URL = (
     "https://qobobocldfjhdkpjyuuq.supabase.co/storage/v1/object/public/"
@@ -16,84 +15,70 @@ SECTIONS = [
     {
         "id": "sec-1",
         "title": "1. Executive Summary",
-        "body": (
-            "We completed an inspection (ukaguzi) of the machine’s power supply system. "
-            "The power system splits electricity into different voltage stages to run the machine. "
-            "We found major faults causing the machine to shut down. To restore stable, high-quality operation, "
-            "we must replace one dead power module and repair two failed circuits on another board."
-        ),
         "status": "",
-        "statusTone": "neutral",
-    },
-    {
-        "id": "sec-2a",
-        "title": "2. Diagnostic Findings — Stage 1: 5V (7A) External Power Supply",
-        "status": "Completely Dead / Unstable",
-        "statusTone": "danger",
         "body": (
-            "This is a separate power box mounted inside the main unit. We troubleshot the system and got it to turn on, "
-            "but it does not work for long. It runs for a few minutes and then goes completely off. It is completely unreliable."
+            "We completed an inspection (ukaguzi) of the X-ray inspection system’s power supply. "
+            "The power system splits electricity into different voltage stages to run the machine. "
+            "We found major faults that prevent reliable startup and sustained operation. "
+            "To restore stable, high-quality operation, one dead power module must be replaced and two failed circuits on another board must be repaired."
         ),
     },
     {
-        "id": "sec-2b",
-        "title": "Stage 2: 24V (5A) Main Power Supply",
-        "status": "Working Perfectly",
-        "statusTone": "ok",
+        "id": "sec-2",
+        "title": "2. Problem Description",
+        "status": "",
+        "body": (
+            "The X-ray inspection system fails to start. The ANDREX SMART display and XRS Controller monitor remain blank during startup."
+        ),
+    },
+    {
+        "id": "sec-3a",
+        "title": "3. Diagnostic Findings",
+        "status": "",
+        "body": "Findings are organised by power stage of the XRS power supply system.",
+    },
+    {
+        "id": "sec-3b",
+        "title": "3.1 Stage 1 — 5V (7A) External Power Supply",
+        "status": "Status: Completely dead / unstable",
+        "body": (
+            "This is a separate power box mounted inside the main unit. Troubleshooting restored temporary power, "
+            "but the supply does not remain operational. It runs for only a few minutes, then shuts down completely. "
+            "The module is unreliable and not fit for continued service."
+        ),
+    },
+    {
+        "id": "sec-3c",
+        "title": "3.2 Stage 2 — 24V (5A) Main Power Supply",
+        "status": "Status: Working within specification",
         "body": "Voltage measurements are stable and within normal limits.",
     },
     {
-        "id": "sec-2c",
-        "title": "Stage 3: 27V Booster & 15V Buck Circuits",
-        "status": "Failed (But Repairable)",
-        "statusTone": "warn",
+        "id": "sec-3d",
+        "title": "3.3 Stage 3 — 27V Booster & 15V Buck Circuits",
+        "status": "Status: Failed — repairable at component level",
         "body": (
-            "These are two separate circuits built onto the 24V power board. The 27V Booster and the 15V Buck have both failed. "
-            "However, the main circuit board itself is healthy. We can fix this part by replacing the broken individual components with brand-new ones."
-        ),
-    },
-    {
-        "id": "sec-3",
-        "title": "3. Recommendations & Action Plan",
-        "status": "",
-        "statusTone": "neutral",
-        "body": (
-            "Full Replacement of the 5V PSU: We recommend replacing the 5V unit with a brand-new module. "
-            "Repairing the old one is not reliable. A new part guarantees long-term machine efficiency and quality performance.\n\n"
-            "Component Repair for 27V & 15V Circuits: We recommend repairing these circuits by replacing the bad individual electronic components. "
-            "We guarantee this will return this section to normal condition."
+            "These two circuits are built onto the 24V power board. Both the 27V booster and the 15V buck have failed. "
+            "The main board substrate remains serviceable; failed discrete components can be replaced with new parts to restore this section."
         ),
     },
     {
         "id": "sec-4",
-        "title": "4. Sourcing & Timeline Challenges",
+        "title": "4. Recommendations & Action Plan",
         "status": "",
-        "statusTone": "neutral",
         "body": (
-            "The Challenge: Most of the repair components and the new 5V power supply are not available in the country.\n\n"
-            "The Solution: We must purchase and import these items from international suppliers abroad.\n\n"
-            "Time Impact: Importing the parts will add some extra days of work. We will order everything immediately after you confirm that we should proceed."
+            "5V PSU: Replace the 5V external module with a new unit. Repair of the failed module is not recommended for long-term reliability.\n\n"
+            "27V / 15V circuits: Repair by replacing the failed electronic components on the board. "
+            "This returns that section to normal operating condition when completed and tested."
         ),
     },
     {
         "id": "sec-5",
-        "title": "5. Commercial Attachment",
+        "title": "5. Sourcing & Timeline",
         "status": "",
-        "statusTone": "neutral",
         "body": (
-            "A detailed parts list, quantities, and cost estimate are provided in the attached proforma invoice (issued separately). "
-            "This report covers technical findings and the recommended repair strategy only; commercial details are in the proforma attachment."
-        ),
-    },
-    {
-        "id": "sec-6",
-        "title": "6. Next Steps to Proceed",
-        "status": "",
-        "statusTone": "neutral",
-        "body": (
-            "The machine cannot run safely in its current state. To begin the repair process, we need:\n\n"
-            "1. Formal approval of this report and the repair strategy.\n"
-            "2. Approval of the procurement budget to import the parts (see attached proforma invoice)."
+            "Most required repair components and the replacement 5V supply are not available locally and must be imported from international suppliers.\n\n"
+            "Import lead time will add working days after approval. Ordering will start immediately upon confirmation to proceed."
         ),
     },
 ]
@@ -157,10 +142,26 @@ def main():
         "invoiceNumber": REPORT_NUMBER,
         "reportNumber": REPORT_NUMBER,
         "reportTitle": "TECHNICAL DIAGNOSTIC & REPAIR REPORT",
-        "clientName": "Client Management",
-        "toName": "Client Management",
-        "toAddress": "",
-        "clientAddress": "",
+        "documentRevision": "Rev. 00",
+        "confidentiality": "Confidential — issued for Tanzania Steel Pipes Limited only",
+        "clientName": "Tanzania Steel Pipes Limited",
+        "toName": "Tanzania Steel Pipes Limited",
+        "toAddress": (
+            "Plot 4, Ubungo Industrial Estate\n"
+            "Morogoro Road\n"
+            "P.O. Box 5476\n"
+            "Dar es Salaam, Tanzania\n"
+            "Tel: +255 (0)22-2450457\n"
+            "Email: info@tsp.co.tz"
+        ),
+        "clientAddress": (
+            "Plot 4, Ubungo Industrial Estate\n"
+            "Morogoro Road\n"
+            "P.O. Box 5476\n"
+            "Dar es Salaam, Tanzania\n"
+            "Tel: +255 (0)22-2450457\n"
+            "Email: info@tsp.co.tz"
+        ),
         "fromName": "Honic Company Limited",
         "fromEmail": "support@honiccompany.com",
         "fromPhone": "+255 763 818138 / +255 786 957 939",
@@ -171,16 +172,15 @@ def main():
         "footerAddress": "Dar es Salaam, Tanzania",
         "issueDate": "2026-07-22",
         "reportDate": "2026-07-22",
-        "machineName": "",
-        "subject": "Power Supply Unit (PSU) Inspection and Repair Plan",
-        "attachmentNote": (
-            "This technical report is issued together with a separate proforma invoice that lists required parts, "
-            "quantities, and costs. Please review the attached proforma for procurement and budget approval."
-        ),
-        "nextSteps": (
-            "The machine cannot run safely in its current state. To begin the repair process, we need:\n\n"
-            "1. Formal approval of this report and the repair strategy.\n"
-            "2. Approval of the procurement budget (see attached proforma invoice) to import the parts."
+        "machineName": "YXLON ANDREX SMART 583 (XRS)",
+        "serialNumber": "81226",
+        "application": "Non-Medical / Non-Destructive Testing (NDT) — spiral steel pipes",
+        "subject": "XRS Power Supply Failure – YXLON ANDREX SMART 583",
+        "closureNote": (
+            "Enclosure: A separate proforma invoice is attached with required parts, quantities, and costs.\n\n"
+            "To proceed with repair we require:\n"
+            "1. Formal approval of this report and the recommended repair strategy.\n"
+            "2. Approval of the procurement budget on the attached proforma invoice."
         ),
         "preparedByName": "Authorized Signatory",
         "preparedByTitle": "Engineering / Repair Team",
@@ -197,14 +197,13 @@ def main():
     now = datetime.now(timezone.utc).isoformat()
     record = {
         "invoice_number": REPORT_NUMBER,
-        "client_name": "Client Management",
+        "client_name": "Tanzania Steel Pipes Limited",
         "issue_date": "2026-07-22",
         "due_date": None,
         "currency": "TZS",
         "subtotal": 0,
         "tax_amount": 0,
         "grand_total": 0,
-        "created_by": None,
         "payload": payload,
         "updated_at": now,
     }
@@ -221,6 +220,7 @@ def main():
         rid = existing["id"]
     else:
         record["created_at"] = now
+        record["created_by"] = None
         status, data = supabase_request("POST", f"{supabase_url}/rest/v1/invoices", apikey, record)
         action = "inserted"
         rid = None
@@ -235,6 +235,8 @@ def main():
                 action: True,
                 "id": first.get("id", rid),
                 "report_number": REPORT_NUMBER,
+                "client": "Tanzania Steel Pipes Limited",
+                "machine": "YXLON ANDREX SMART 583 (XRS)",
                 "edit_url": f"/dashboard/technical-reports?invoiceId={first.get('id', rid)}&mode=edit",
             },
             indent=2,
