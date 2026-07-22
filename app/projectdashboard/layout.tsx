@@ -82,7 +82,7 @@ export default function ProjectDashboardLayout({ children }: ProjectDashboardLay
             <p className="mt-1 text-xs text-muted-foreground">Sidebar navigation only</p>
           </div>
 
-          <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1">
+          <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {projectNav.map((item) => {
               const Icon = item.icon
               const active = isActive(item.href)

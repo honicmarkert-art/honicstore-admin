@@ -379,8 +379,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
           </div>
 
-          {/* Navigation — scroll when items exceed viewport */}
-          <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-2 py-4">
+          {/* Navigation — scroll when items exceed viewport (scrollbar hidden) */}
+          <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-2 py-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {navigation.map((item) => {
               const Icon = item.icon
               
