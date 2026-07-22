@@ -130,7 +130,7 @@ function documentKindLabels(kind: DocumentKind) {
     billToLabel: isDelivery ? "Deliver to:" : isQuote ? "Quotation for:" : "Invoice to:",
     dueLabel: isDelivery ? "Delivery date:" : isQuote ? "Valid until:" : "Due:",
     issueDateLabel: isDelivery ? "Note date:" : isQuote ? "Quotation date:" : "Issue date:",
-    referenceLabel: isDelivery ? "Order / PO reference:" : "",
+    referenceLabel: isDelivery ? "Order / PO reference:" : isQuote ? "" : "Report Ref No :",
     metaSection: isDelivery ? "Delivery details" : isQuote ? "Quotation meta" : "Invoice meta",
     numberField: isDelivery ? "Delivery Note #" : isQuote ? "Quotation #" : "Invoice #",
     grandTotalLabel: isDelivery ? "TOTAL VALUE :" : isQuote ? "QUOTED TOTAL :" : "GRAND TOTAL :",
@@ -689,7 +689,7 @@ export default function AdminInvoicesPage({
         setTermsText(String(p.termsText || termsText))
         setQuotationScope(String(p.quotationScope || ""))
         setItemsTableTitle(String(p.itemsTableTitle || ""))
-        setReferenceNumber(String(p.referenceNumber || ""))
+        setReferenceNumber(String(p.referenceNumber || p.linkedTechnicalReport || ""))
         setBackorderedNote(String(p.backorderedNote || ""))
         if (p.documentKind === "quotation" && p.quotationDisclaimer && typeof p.termsText === "string") {
           const disc = String(p.quotationDisclaimer)
@@ -1518,7 +1518,7 @@ export default function AdminInvoicesPage({
         </div>`
       : ""
     const referenceHtml =
-      isDeliveryNote && referenceNumber.trim()
+      docLabels.referenceLabel && referenceNumber.trim()
         ? `<p class="inv-date" style="margin-top:4px;">${escapeHtml(docLabels.referenceLabel)} ${escapeHtml(referenceNumber.trim())}</p>`
         : ""
     const backorderedHtml =
@@ -1701,9 +1701,10 @@ export default function AdminInvoicesPage({
               </div>
               <div class="inv-meta">
                 <p class="inv-no">${escapeHtml(docLabels.numberLabel)} ${escapeHtml(invoiceNumber)}</p>
+                ${isDeliveryNote ? "" : referenceHtml}
                 <p class="inv-date">${escapeHtml(docLabels.issueDateLabel)} ${escapeHtml(formatLongDate(issueDate))}</p>
                 <p class="inv-date" style="color:#6b7280;margin-top:4px;">${escapeHtml(docLabels.dueLabel)} ${escapeHtml(formatLongDate(dueDate))}</p>
-                ${referenceHtml}
+                ${isDeliveryNote ? referenceHtml : ""}
               </div>
             </div>
             ${
@@ -1951,6 +1952,7 @@ export default function AdminInvoicesPage({
       quotationScope,
       itemsTableTitle,
       referenceNumber,
+      linkedTechnicalReport: !isDeliveryNote && !isQuotation ? referenceNumber.trim() : undefined,
       backorderedNote,
       items,
       paymentMethods,
@@ -2311,6 +2313,18 @@ export default function AdminInvoicesPage({
                 <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>{docLabels.numberField}</label>
                 <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
               </div>
+              {!isDeliveryNote && !isQuotation ? (
+                <div>
+                  <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>
+                    Report Ref No
+                  </label>
+                  <Input
+                    value={referenceNumber}
+                    onChange={(e) => setReferenceNumber(e.target.value)}
+                    placeholder="e.g. TR-2026-0001"
+                  />
+                </div>
+              ) : null}
               <div>
                 <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>{docLabels.issueDateLabel.replace(/:$/, "")}</label>
                 <Input type="date" value={issueDate} onChange={(e) => handleIssueDateChange(e.target.value)} />
@@ -2943,6 +2957,11 @@ export default function AdminInvoicesPage({
                 </div>
                 <div className="text-left sm:text-right">
                   <p className="text-sm font-extrabold text-slate-900">{docLabels.numberLabel} {invoiceNumber}</p>
+                  {!isDeliveryNote && docLabels.referenceLabel && referenceNumber.trim() ? (
+                    <p className="mt-0.5 text-sm font-semibold text-slate-900">
+                      {docLabels.referenceLabel} {referenceNumber.trim()}
+                    </p>
+                  ) : null}
                   <p className="mt-1 text-sm text-slate-900">{docLabels.issueDateLabel} {formatLongDate(issueDate)}</p>
                   <p className="mt-0.5 text-xs text-slate-500">{docLabels.dueLabel} {formatLongDate(dueDate)}</p>
                   {isDeliveryNote && referenceNumber.trim() ? (
