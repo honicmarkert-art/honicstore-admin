@@ -1573,9 +1573,9 @@ export default function AdminInvoicesPage({
             .co-addr { margin-top: 8px; padding-left: 8px; border-left: 2px solid #e2e8f0; font-size: 10px; line-height: 1.55; color: #64748b; white-space: pre-line; }
             .doc-title-wrap { text-align: right; display: flex; flex-direction: column; justify-content: center; align-items: flex-end; }
             .inv-title { font-size: 36px; font-weight: 800; color: ${blue}; letter-spacing: 0.04em; line-height: 1; }
-            .url-row { text-align: right; font-size: 9px; font-weight: 600; margin: 8px 0 0; letter-spacing: 0.02em; }
+            .url-row { text-align: right; font-size: 9px; font-weight: 600; margin: 10px 0 4px; letter-spacing: 0.02em; }
             .url-row a { color: #475569; text-decoration: none; }
-            .line-wrap { margin-top: 8px; }
+            .line-wrap { margin-top: 0; }
             .line-rule { position: relative; min-height: 1px; }
             /* border-top prints reliably; thin background divs often disappear in “Save as PDF” */
             .line-bg { width: 100%; height: 0; margin: 0; padding: 0; border: 0; border-top: 1px solid #d1d5db; }
@@ -1683,9 +1683,9 @@ export default function AdminInvoicesPage({
               <div style="text-align:right;" class="doc-title-wrap">
                 <div class="inv-title">${escapeHtml(docLabels.title)}</div>
                 ${quoteSubtitleHtml}
-                <div class="url-row"><a href="${escapeHtml(websiteHref)}" target="_blank" rel="noopener noreferrer">${escapeHtml(websiteDisplay)}</a></div>
               </div>
             </div>
+            <div class="url-row"><a href="${escapeHtml(websiteHref)}" target="_blank" rel="noopener noreferrer">${escapeHtml(websiteDisplay)}</a></div>
             <div class="line-wrap">
               <div class="line-rule">
                 <div class="line-bg"></div>
@@ -2929,16 +2929,16 @@ export default function AdminInvoicesPage({
                   {isDeliveryNote && docLabels.subtitle ? (
                     <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">{docLabels.subtitle}</p>
                   ) : null}
-                  <p className="mt-2 text-[9px] font-semibold normal-case leading-snug tracking-normal text-slate-600 sm:text-[10px]">
-                    <a href={websiteHref} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                      {websiteDisplay}
-                    </a>
-                  </p>
                 </div>
               </div>
 
-              {/* Divider directly under header */}
-              <div className="relative mt-2 px-6">
+              {/* Website sits on the divider line (not under INVOICE title) */}
+              <div className="relative mt-2.5 px-6">
+                <p className="pb-1 text-right text-[9px] font-semibold normal-case leading-none tracking-normal text-slate-600 sm:text-[10px]">
+                  <a href={websiteHref} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                    {websiteDisplay}
+                  </a>
+                </p>
                 <div className="h-px w-full" style={{ background: INV.lineGray }} />
                 <div className="absolute bottom-0 left-6 h-[3px] w-24" style={{ background: INV.blue }} />
               </div>
