@@ -1324,7 +1324,7 @@ export default function AdminInvoicesPage({
       .join("")
 
     const logoHtml = invoiceLogo
-      ? `<img src="${invoiceLogo}" alt="" style="height:72px;max-width:128px;object-fit:contain;" />`
+      ? `<img src="${invoiceLogo}" alt="" style="height:72px;max-width:128px;object-fit:contain;display:block;" />`
       : `<div style="height:72px;width:72px;border-radius:50%;border:2px dashed #cbd5e1;display:flex;align-items:center;justify-content:center;font-size:9px;color:#9ca3af;">Logo</div>`
 
     const billLines = [billToAddress, billToEmail, billToPhone].filter(Boolean)
@@ -1547,11 +1547,12 @@ export default function AdminInvoicesPage({
             .page-inner { position: relative; z-index: 1; }
             .sign-stamp { margin: 8px 0 0; padding: 0; text-align: right; }
             .sign-stamp img { max-height: 140px; max-width: 280px; object-fit: contain; vertical-align: bottom; opacity: 0.95; }
-            .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
-            .brand { display: flex; align-items: flex-start; gap: 14px; }
+            .head { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+            .brand { display: flex; align-items: center; gap: 14px; max-width: 58%; }
             .co { font-size: 18px; font-weight: 800; color: #111; letter-spacing: -0.02em; }
             .tag { font-size: 10px; font-weight: 800; color: #374151; letter-spacing: 0.12em; text-transform: uppercase; margin-top: 2px; }
             .co-addr { margin-top: 8px; padding-left: 8px; border-left: 2px solid #e2e8f0; font-size: 10px; line-height: 1.55; color: #64748b; white-space: pre-line; }
+            .doc-title-wrap { text-align: right; padding-top: 14px; }
             .inv-title { font-size: 36px; font-weight: 800; color: ${blue}; letter-spacing: 0.04em; line-height: 1; }
             .line-wrap { position: relative; margin-top: 14px; min-height: 1px; }
             .url-row { text-align: right; font-size: 9px; font-weight: 600; margin-top: 6px; letter-spacing: 0.02em; }
@@ -1604,9 +1605,16 @@ export default function AdminInvoicesPage({
             .bar { position: relative; margin-top: 24px; min-height: 1px; }
             .bar .line-bg { width: 100%; height: 0; border: 0; border-top: 1px solid #d1d5db; }
             .bar .line-accent { left: auto; right: 0; top: 0; width: 96px; height: 0; border: 0; border-top: 3px solid ${blue}; }
-            .icons { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-top: 12px; font-size: 11px; color: #4b5563; }
-            .ic { display: flex; align-items: center; gap: 8px; }
-            .ic svg { display: none; }
+            .icons { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px; margin-top: 12px; font-size: 12px; color: #4b5563; }
+            .ic { display: flex; align-items: center; gap: 8px; max-width: 34%; }
+            .ic-addr { align-items: flex-start; }
+            .ic-box {
+              display: inline-flex; align-items: center; justify-content: center;
+              width: 28px; height: 28px; flex-shrink: 0;
+              border: 2px solid ${blue}; border-radius: 4px; color: ${blue};
+            }
+            .ic-box svg { display: block; width: 14px; height: 14px; }
+            .ic-text { line-height: 1.4; word-break: break-word; }
             .quote-sub { font-size: 9px; font-weight: 700; color: #64748b; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 5px; text-align: right; }
             .quote-scope { font-size: 12px; color: #475569; margin: 6px 0 0; line-height: 1.45; }
             .quote-prepared-footer { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e7eb; font-size: 11px; color: #64748b; text-align: center; line-height: 1.45; }
@@ -1652,7 +1660,7 @@ export default function AdminInvoicesPage({
                   ${fromAddress.trim() ? `<div class="co-addr">${escapeHtml(fromAddress.trim())}</div>` : ""}
                 </div>
               </div>
-              <div style="text-align:right;">
+              <div style="text-align:right;" class="doc-title-wrap">
                 <div class="inv-title">${escapeHtml(docLabels.title)}</div>
                 ${quoteSubtitleHtml}
               </div>
@@ -1757,9 +1765,24 @@ export default function AdminInvoicesPage({
               <div class="line-accent"></div>
             </div>
             <div class="icons">
-              <div class="ic">📞 <span>${escapeHtml(footerPhone)}</span></div>
-              <div class="ic">✉ <span>${escapeHtml(footerEmail)}</span></div>
-              <div class="ic">📍 <span>${escapeHtml(footerAddress)}</span></div>
+              <div class="ic">
+                <span class="ic-box" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                </span>
+                <span class="ic-text">${escapeHtml(footerPhone)}</span>
+              </div>
+              <div class="ic">
+                <span class="ic-box" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                </span>
+                <span class="ic-text">${escapeHtml(footerEmail)}</span>
+              </div>
+              <div class="ic ic-addr">
+                <span class="ic-box" aria-hidden="true" style="margin-top:2px;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></svg>
+                </span>
+                <span class="ic-text">${escapeHtml(footerAddress)}</span>
+              </div>
             </div>
             ${quotePreparedFooterHtml}
             </div>
@@ -2822,13 +2845,13 @@ export default function AdminInvoicesPage({
             >
               <div className="relative z-10">
               {/* Header */}
-              <div className="flex flex-col justify-between gap-5 px-6 pb-0 pt-6 sm:flex-row sm:items-start">
-                <div className="flex max-w-[58%] items-start gap-3 sm:gap-4">
+              <div className="flex flex-col justify-between gap-5 px-6 pb-0 pt-6 sm:flex-row sm:items-center">
+                <div className="flex max-w-[58%] items-center gap-3 sm:gap-4">
                   {invoiceLogo ? (
                     <img
                       src={invoiceLogo}
                       alt=""
-                      className="mt-0.5 h-[72px] w-auto max-w-[128px] shrink-0 object-contain"
+                      className="h-[72px] w-auto max-w-[128px] shrink-0 object-contain"
                     />
                   ) : (
                     <div
@@ -2838,7 +2861,7 @@ export default function AdminInvoicesPage({
                       Logo
                     </div>
                   )}
-                  <div className="min-w-0 pt-0.5">
+                  <div className="min-w-0">
                     <p className="text-lg font-extrabold leading-tight tracking-tight text-slate-900">
                       {fromName || "Your company"}
                     </p>
@@ -2854,10 +2877,10 @@ export default function AdminInvoicesPage({
                     ) : null}
                   </div>
                 </div>
-                <div className="shrink-0 text-right">
+                <div className="shrink-0 self-center pt-3 text-right sm:pt-4">
                   <div
                     className={cn(
-                      "font-extrabold tracking-wide sm:pt-0",
+                      "font-extrabold tracking-wide",
                       isQuotation ? "text-3xl sm:text-4xl" : "text-4xl"
                     )}
                     style={{ color: INV.blue }}
