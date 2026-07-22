@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { getDeliveryNotePreset, getDeliveryNotePresetByReference, applyDocumentPricesToItems, presetToSourceLinePrices, type SourceLinePrice } from "@/lib/delivery-note-presets"
+import { LOGO_PUBLIC_URL, COMPANY_ADDRESS_DEFAULT, COMPANY_ADDRESS_FOOTER } from "@/lib/technical-report-defaults"
 import { useTheme } from "@/hooks/use-theme"
 import { useToast } from "@/hooks/use-toast"
 
@@ -40,6 +41,7 @@ type InvoiceInitialValues = {
   fromName?: string
   companyTagline?: string
   companyWebsite?: string
+  fromAddress?: string
 }
 
 type ExtraTableColumn = {
@@ -587,8 +589,9 @@ export default function AdminInvoicesPage({
   const [companyTagline, setCompanyTagline] = useState(initialValues?.companyTagline ?? "ONLINE RETAIL")
   const [fromEmail, setFromEmail] = useState("support@honiccompany.com")
   const [fromPhone, setFromPhone] = useState("+255 786 957 939")
+  const [fromAddress, setFromAddress] = useState(initialValues?.fromAddress ?? COMPANY_ADDRESS_DEFAULT)
   const [companyWebsite, setCompanyWebsite] = useState(initialValues?.companyWebsite ?? "honiccompanystore.com")
-  const [invoiceLogo, setInvoiceLogo] = useState<string>("")
+  const [invoiceLogo, setInvoiceLogo] = useState<string>(LOGO_PUBLIC_URL)
   const [signatureImage, setSignatureImage] = useState<string>("")
   const [stampImage, setStampImage] = useState<string>("")
   const [billToName, setBillToName] = useState("")
@@ -605,7 +608,7 @@ export default function AdminInvoicesPage({
   const [signerTitle, setSignerTitle] = useState("Administrator")
   const [footerPhone, setFooterPhone] = useState("+255 786 957 939")
   const [footerEmail, setFooterEmail] = useState("support@honiccompany.com")
-  const [footerAddress, setFooterAddress] = useState("Dar es Salaam, Tanzania")
+  const [footerAddress, setFooterAddress] = useState(COMPANY_ADDRESS_FOOTER)
   const [currency, setCurrency] = useState("TZS")
   const [taxRate, setTaxRate] = useState(0)
   const [discount, setDiscount] = useState(0)
@@ -674,6 +677,7 @@ export default function AdminInvoicesPage({
         setFromName(String(p.fromName || fromName))
         setFromEmail(String(p.fromEmail || fromEmail))
         setFromPhone(String(p.fromPhone || fromPhone))
+        setFromAddress(String(p.fromAddress || fromAddress || COMPANY_ADDRESS_DEFAULT))
         setCompanyWebsite(String(p.companyWebsite || companyWebsite))
         setCompanyTagline(String(p.companyTagline || companyTagline))
         setSignerName(String(p.signerName || signerName))
@@ -695,6 +699,7 @@ export default function AdminInvoicesPage({
           }
         }
         if (typeof p.invoiceLogo === "string" && p.invoiceLogo) setInvoiceLogo(p.invoiceLogo)
+        else setInvoiceLogo(LOGO_PUBLIC_URL)
         if (typeof p.signatureImage === "string" && p.signatureImage) setSignatureImage(p.signatureImage)
         setStampImage(typeof p.stampImage === "string" ? p.stampImage : "")
 
@@ -823,13 +828,13 @@ export default function AdminInvoicesPage({
     if (savedInvoiceId) return
     try {
       const savedLogo = localStorage.getItem(LOGO_STORAGE_KEY)
-      if (savedLogo) setInvoiceLogo(savedLogo)
+      setInvoiceLogo(savedLogo || LOGO_PUBLIC_URL)
       const savedSig = localStorage.getItem(SIGNATURE_STORAGE_KEY)
       if (savedSig) setSignatureImage(savedSig)
       const savedStamp = localStorage.getItem(STAMP_STORAGE_KEY)
       if (savedStamp) setStampImage(savedStamp)
     } catch {
-      // ignore storage access failures
+      setInvoiceLogo(LOGO_PUBLIC_URL)
     }
   }, [savedInvoiceId])
 
@@ -1223,8 +1228,12 @@ export default function AdminInvoicesPage({
   }
 
   const clearLogo = () => {
-    setInvoiceLogo("")
-    localStorage.removeItem(LOGO_STORAGE_KEY)
+    setInvoiceLogo(LOGO_PUBLIC_URL)
+    try {
+      localStorage.setItem(LOGO_STORAGE_KEY, LOGO_PUBLIC_URL)
+    } catch {
+      // ignore
+    }
   }
 
   const handleSignatureUpload = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1539,9 +1548,10 @@ export default function AdminInvoicesPage({
             .sign-stamp { margin: 8px 0 0; padding: 0; text-align: right; }
             .sign-stamp img { max-height: 140px; max-width: 280px; object-fit: contain; vertical-align: bottom; opacity: 0.95; }
             .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
-            .brand { display: flex; align-items: center; gap: 14px; }
+            .brand { display: flex; align-items: flex-start; gap: 14px; }
             .co { font-size: 18px; font-weight: 800; color: #111; letter-spacing: -0.02em; }
             .tag { font-size: 10px; font-weight: 800; color: #374151; letter-spacing: 0.12em; text-transform: uppercase; margin-top: 2px; }
+            .co-addr { margin-top: 8px; padding-left: 8px; border-left: 2px solid #e2e8f0; font-size: 10px; line-height: 1.55; color: #64748b; white-space: pre-line; }
             .inv-title { font-size: 36px; font-weight: 800; color: ${blue}; letter-spacing: 0.04em; line-height: 1; }
             .line-wrap { position: relative; margin-top: 14px; min-height: 1px; }
             .url-row { text-align: right; font-size: 9px; font-weight: 600; margin-top: 6px; letter-spacing: 0.02em; }
@@ -1639,6 +1649,7 @@ export default function AdminInvoicesPage({
                 <div>
                   <div class="co">${escapeHtml(fromName || "Your company")}</div>
                   <div class="tag">${escapeHtml(companyTagline || " ")}</div>
+                  ${fromAddress.trim() ? `<div class="co-addr">${escapeHtml(fromAddress.trim())}</div>` : ""}
                 </div>
               </div>
               <div style="text-align:right;">
@@ -1882,6 +1893,7 @@ export default function AdminInvoicesPage({
       fromName,
       fromEmail,
       fromPhone,
+      fromAddress,
       companyWebsite,
       companyTagline,
       signerName,
@@ -2114,6 +2126,18 @@ export default function AdminInvoicesPage({
                   className="font-semibold tracking-wide"
                 />
               </div>
+            </div>
+            <div>
+              <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>
+                Company address (shown under company name)
+              </label>
+              <Textarea
+                value={fromAddress}
+                onChange={(e) => setFromAddress(e.target.value)}
+                rows={2}
+                className="min-h-[56px] resize-y"
+                placeholder="Office address"
+              />
             </div>
             <div>
               <label className={cn("mb-1 block text-xs font-bold", themeClasses.textNeutralSecondary)}>Website (small text, top-right under line)</label>
@@ -2798,13 +2822,13 @@ export default function AdminInvoicesPage({
             >
               <div className="relative z-10">
               {/* Header */}
-              <div className="flex flex-col justify-between gap-4 px-6 pb-0 pt-6 sm:flex-row sm:items-start">
-                <div className="flex items-center gap-3 sm:gap-4">
+              <div className="flex flex-col justify-between gap-5 px-6 pb-0 pt-6 sm:flex-row sm:items-start">
+                <div className="flex max-w-[58%] items-start gap-3 sm:gap-4">
                   {invoiceLogo ? (
                     <img
                       src={invoiceLogo}
                       alt=""
-                      className="h-[72px] w-auto max-w-[128px] object-contain"
+                      className="mt-0.5 h-[72px] w-auto max-w-[128px] shrink-0 object-contain"
                     />
                   ) : (
                     <div
@@ -2814,16 +2838,23 @@ export default function AdminInvoicesPage({
                       Logo
                     </div>
                   )}
-                  <div>
+                  <div className="min-w-0 pt-0.5">
                     <p className="text-lg font-extrabold leading-tight tracking-tight text-slate-900">
                       {fromName || "Your company"}
                     </p>
                     <p className="mt-0.5 text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-700 dark:text-slate-300">
                       {companyTagline}
                     </p>
+                    {fromAddress.trim() ? (
+                      <div className="mt-2 border-l-2 border-slate-200 pl-2.5">
+                        <p className="whitespace-pre-line text-[10px] leading-[1.55] text-slate-500">
+                          {fromAddress.trim()}
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
-                <div className="text-right">
+                <div className="shrink-0 text-right">
                   <div
                     className={cn(
                       "font-extrabold tracking-wide sm:pt-0",

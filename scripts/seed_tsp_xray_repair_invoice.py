@@ -1,4 +1,4 @@
-"""Rewrite TSP X-ray repair invoice as two professional tables: Services + Components."""
+"""TSP X-ray repair invoice — Components first, then Service; comma prices; dual-use terms."""
 import json
 import os
 from datetime import datetime, timezone
@@ -18,6 +18,10 @@ CLIENT_ADDRESS = (
     "Tel: +255 (0)22-2450457\n"
     "Email: info@tsp.co.tz"
 )
+LOGO_PUBLIC_URL = (
+    "https://qobobocldfjhdkpjyuuq.supabase.co/storage/v1/object/public/"
+    "invoice-assets/invoices/admin/logo/company-logo.jpg"
+)
 STAMP_PUBLIC_URL = (
     "https://qobobocldfjhdkpjyuuq.supabase.co/storage/v1/object/public/"
     "invoice-assets/invoices/admin/stamp/company-stamp.jpg"
@@ -26,51 +30,65 @@ SIGNATURE_PUBLIC_URL = (
     "https://qobobocldfjhdkpjyuuq.supabase.co/storage/v1/object/public/"
     "invoice-assets/invoices/admin/signature/prepared-by-signature-white-v2.png"
 )
+COMPANY_ADDRESS = (
+    "42 Bibi Titi Road\n"
+    "DIT CEITT Building, 3rd Floor\n"
+    "P.O. Box 2958\n"
+    "Dar es Salaam, Tanzania"
+)
+COMPANY_ADDRESS_FOOTER = (
+    "42 Bibi Titi Road, DIT CEITT Building, 3rd Floor, P.O. Box 2958, Dar es Salaam, Tanzania"
+)
 
-# Two tables: Service charges + Components (concise professional lines).
-SERVICE_ROWS = [
-    {
-        "sn": "1",
-        "item": "Technical diagnostics & inspection (Ukaguzi) — fixed, non-refundable",
-        "qty": "1",
-        "amount": "300000",
-    },
-    {
-        "sn": "2",
-        "item": "Electronic repair labour — 5V PSU replacement; 27V/15V circuit repair; testing",
-        "qty": "1",
-        "amount": "800000",
-    },
-]
+
+def money(n: float | int) -> str:
+    """Match invoice studio money() presentation: 1,251,400.00"""
+    return f"{float(n):,.2f}"
+
 
 COMPONENT_ROWS = [
     {
         "sn": "1",
-        "item": "5V / 7A PSU — SunPower SPS-035-05 or Mean Well LRS-35-5 (or equiv.)",
+        "item": "5V / 7A PSU (SunPower SPS-035-05 / Mean Well LRS-35-5 or equiv.)",
         "qty": "1",
-        "unitPrice": "110400",
-        "totalPrice": "110400",
+        "unitPrice": money(110400),
+        "totalPrice": money(110400),
     },
     {
         "sn": "2",
         "item": "Regulator LM2577",
         "qty": "1",
-        "unitPrice": "12000",
-        "totalPrice": "12000",
+        "unitPrice": money(12000),
+        "totalPrice": money(12000),
     },
     {
         "sn": "3",
         "item": "Regulator LM2576",
         "qty": "2",
-        "unitPrice": "12000",
-        "totalPrice": "24000",
+        "unitPrice": money(12000),
+        "totalPrice": money(24000),
     },
     {
         "sn": "4",
         "item": "Schottky diode 1N5821",
         "qty": "2",
-        "unitPrice": "2500",
-        "totalPrice": "5000",
+        "unitPrice": money(2500),
+        "totalPrice": money(5000),
+    },
+]
+
+SERVICE_ROWS = [
+    {
+        "sn": "1",
+        "item": "Technical diagnostics & inspection (Ukaguzi) — fixed, non-refundable",
+        "qty": "1",
+        "amount": money(300000),
+    },
+    {
+        "sn": "2",
+        "item": "Electronic repair labour — PSU replacement, 27V/15V repair, testing",
+        "qty": "1",
+        "amount": money(800000),
     },
 ]
 
@@ -131,6 +149,10 @@ def find_report(base_url: str, apikey: str, report_number: str):
     return data[0]
 
 
+def parse_money(s: str) -> float:
+    return float(str(s).replace(",", ""))
+
+
 def main():
     repo_root = Path(__file__).resolve().parents[1]
     load_env(repo_root / ".env.local")
@@ -139,31 +161,32 @@ def main():
     if not base or not apikey:
         raise SystemExit("Missing Supabase env vars")
 
-    service_total = sum(float(r["amount"]) * float(r["qty"]) for r in SERVICE_ROWS)
-    parts_total = sum(float(r["totalPrice"]) for r in COMPONENT_ROWS)
-    grand_total = service_total + parts_total
+    parts_total = sum(parse_money(r["totalPrice"]) for r in COMPONENT_ROWS)
+    service_total = sum(parse_money(r["amount"]) * parse_money(r["qty"]) for r in SERVICE_ROWS)
+    grand_total = parts_total + service_total
 
+    # Components first, then service — professional repair invoice order
     sections = [
         {
-            "title": "SERVICE CHARGES",
+            "title": "1. COMPONENTS & SPARE PARTS",
             "columns": [
-                {"key": "sn", "label": "S/N"},
+                {"key": "sn", "label": "S/N", "align": "center"},
                 {"key": "item", "label": "Description"},
-                {"key": "qty", "label": "Qty"},
-                {"key": "amount", "label": "Amount (TZS)"},
-            ],
-            "rows": SERVICE_ROWS,
-        },
-        {
-            "title": "COMPONENTS & SPARE PARTS",
-            "columns": [
-                {"key": "sn", "label": "S/N"},
-                {"key": "item", "label": "Description"},
-                {"key": "qty", "label": "Qty"},
-                {"key": "unitPrice", "label": "Unit price (TZS)"},
-                {"key": "totalPrice", "label": "Total (TZS)"},
+                {"key": "qty", "label": "Qty", "align": "right"},
+                {"key": "unitPrice", "label": "Unit price", "align": "right"},
+                {"key": "totalPrice", "label": "Total", "align": "right"},
             ],
             "rows": COMPONENT_ROWS,
+        },
+        {
+            "title": "2. SERVICE CHARGES",
+            "columns": [
+                {"key": "sn", "label": "S/N", "align": "center"},
+                {"key": "item", "label": "Description"},
+                {"key": "qty", "label": "Qty", "align": "right"},
+                {"key": "amount", "label": "Amount", "align": "right"},
+            ],
+            "rows": SERVICE_ROWS,
         },
     ]
 
@@ -183,28 +206,31 @@ def main():
         "fromName": "Honic Company Limited",
         "fromEmail": "support@honiccompany.com",
         "fromPhone": "+255 763 818138 / +255 786 957 939",
+        "fromAddress": COMPANY_ADDRESS,
         "companyWebsite": "www.honiccompanystore.com",
         "companyTagline": "INNOVATIONS AND RESEARCH",
         "signerName": "Authorized Signatory",
         "signerTitle": "Engineering / Repair Team",
         "footerPhone": "+255 786 957 939",
         "footerEmail": "support@honiccompany.com",
-        "footerAddress": "Dar es Salaam, Tanzania",
+        "footerAddress": COMPANY_ADDRESS_FOOTER,
         "thankYouLine": "Thank you for your business.",
         "referenceNumber": REFERENCE,
-        "itemsTableTitle": "Cost Breakdown",
+        "itemsTableTitle": "Cost Breakdown — ANDREX SMART 583 Power Supply Repair",
         "termsText": (
-            f"Ref: Technical Report {REFERENCE} — ANDREX SMART 583 (S/N 81226).\n\n"
+            f"Ref: Technical Report {REFERENCE} (ANDREX SMART 583, S/N 81226).\n\n"
+            "DOCUMENT USE: This document may be used as a Proforma Invoice for quotation / approval "
+            "and as a Tax Invoice for billing and payment. One document serves both purposes.\n\n"
+            "All amounts are in Tanzania Shillings (TZS). Prices shown are final as listed.\n\n"
             "Diagnostics fee is fixed and non-refundable. Spare parts are imported; lead time applies after approval.\n\n"
-            "Work proceeds upon written approval of this invoice and the technical report."
+            "Work proceeds upon written approval of this document and the linked technical report."
         ),
-        # Keep empty flat items so studio uses projectTables for totals/layout
         "items": [],
         "projectTables": {
             "sections": sections,
             "paymentSchedule": [],
             "hidePaymentSchedule": True,
-            "paymentGrandTotal": f"{grand_total:g}",
+            "paymentGrandTotal": money(grand_total),
             "note": f"Linked to technical report {REFERENCE}.",
         },
         "paymentMethods": [
@@ -216,7 +242,7 @@ def main():
                 "account": "6123 8368",
             }
         ],
-        "invoiceLogo": "",
+        "invoiceLogo": LOGO_PUBLIC_URL,
         "signatureImage": SIGNATURE_PUBLIC_URL,
         "stampImage": STAMP_PUBLIC_URL,
         "totals": {"subtotal": grand_total, "taxAmount": 0, "grandTotal": grand_total},
@@ -264,8 +290,9 @@ def main():
     if report:
         rp = dict(report.get("payload") or {})
         rp["closureNote"] = (
-            f"Enclosure: Invoice {INVOICE_NUMBER} — Service TZS {service_total:,.0f}; "
-            f"Components TZS {parts_total:,.0f}; Grand total TZS {grand_total:,.0f}.\n\n"
+            f"Enclosure: Invoice {INVOICE_NUMBER} (proforma / tax invoice) — "
+            f"Components TZS {parts_total:,.0f}; Service TZS {service_total:,.0f}; "
+            f"Grand total TZS {grand_total:,.0f}.\n\n"
             "To proceed with repair we require:\n"
             "1. Formal approval of this report and the recommended repair strategy.\n"
             f"2. Approval of invoice {INVOICE_NUMBER}."
@@ -284,10 +311,10 @@ def main():
                 action: True,
                 "id": inv_id,
                 "invoice_number": INVOICE_NUMBER,
-                "layout": "two_tables",
-                "service_total": service_total,
-                "components_total": parts_total,
-                "grand_total": grand_total,
+                "order": ["components", "service"],
+                "components_total": money(parts_total),
+                "service_total": money(service_total),
+                "grand_total": money(grand_total),
                 "edit_url": f"/dashboard/invoices?invoiceId={inv_id}&mode=edit",
             },
             indent=2,

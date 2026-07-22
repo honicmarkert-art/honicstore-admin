@@ -51,7 +51,7 @@ export const TSP_XRAY_PSU_REPORT: TechnicalReportDefaults = {
   companyTagline: "INNOVATIONS AND RESEARCH",
   footerPhone: "+255 786 957 939",
   footerEmail: "support@honiccompany.com",
-  footerAddress: "Dar es Salaam, Tanzania",
+  footerAddress: "42 Bibi Titi Road, DIT CEITT Building, 3rd Floor, P.O. Box 2958, Dar es Salaam, Tanzania",
   reportDate: "2026-07-22",
   machineName: "ANDREX SMART 583",
   serialNumber: "81226",
@@ -118,3 +118,14 @@ export const STAMP_PUBLIC_URL =
 
 export const SIGNATURE_PUBLIC_URL =
   "https://qobobocldfjhdkpjyuuq.supabase.co/storage/v1/object/public/invoice-assets/invoices/admin/signature/prepared-by-signature-white-v2.png"
+
+export const LOGO_PUBLIC_URL =
+  "https://qobobocldfjhdkpjyuuq.supabase.co/storage/v1/object/public/invoice-assets/invoices/admin/logo/company-logo.jpg"
+
+/** Default Honic company address for document headers (multi-line). */
+export const COMPANY_ADDRESS_DEFAULT =
+  "42 Bibi Titi Road\nDIT CEITT Building, 3rd Floor\nP.O. Box 2958\nDar es Salaam, Tanzania"
+
+/** Compact single-line address for footers / contact strips. */
+export const COMPANY_ADDRESS_FOOTER =
+  "42 Bibi Titi Road, DIT CEITT Building, 3rd Floor, P.O. Box 2958, Dar es Salaam, Tanzania"
