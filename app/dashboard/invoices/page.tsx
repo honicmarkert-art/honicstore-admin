@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
+import { getDeliveryNotePreset, getDeliveryNotePresetByReference, applyDocumentPricesToItems, presetToSourceLinePrices, type SourceLinePrice } from "@/lib/delivery-note-presets"
 import { useTheme } from "@/hooks/use-theme"
 import { useToast } from "@/hooks/use-toast"
 
@@ -87,7 +88,7 @@ type DetailSectionKey =
   | "signatureStamp"
   | "footer"
 
-type DocumentKind = "invoice" | "quotation"
+type DocumentKind = "invoice" | "quotation" | "delivery_note"
 
 const DOCUMENT_DEFAULTS: Record<
   DocumentKind,
@@ -104,34 +105,122 @@ const DOCUMENT_DEFAULTS: Record<
       "This document is a quotation only — not a tax invoice. No payment is due until a formal invoice is issued upon acceptance.\n\nThis quotation is valid until the date shown above. Prices are estimates and subject to availability. Written acceptance is required before work or supply begins.",
     disclaimer: "",
   },
+  delivery_note: {
+    thankYou: "Please verify all items listed below upon receipt.",
+    terms:
+      "This delivery note confirms the items and quantities shipped. It is not an invoice and does not request payment.\n\nPlease check goods against your order. Note any missing, damaged, or incorrect items on the proof of receipt section and sign to confirm delivery.",
+    disclaimer: "",
+  },
 }
 
 function documentKindLabels(kind: DocumentKind) {
   const isQuote = kind === "quotation"
+  const isDelivery = kind === "delivery_note"
   const defs = DOCUMENT_DEFAULTS[kind]
   return {
-    title: isQuote ? "QUOTATION" : "INVOICE",
-    subtitle: isQuote ? "Price estimate — not a tax invoice" : "",
-    numberLabel: isQuote ? "Quotation no :" : "Invoice no :",
-    billToLabel: isQuote ? "Quotation for:" : "Invoice to:",
-    dueLabel: isQuote ? "Valid until:" : "Due:",
-    issueDateLabel: isQuote ? "Quotation date:" : "Issue date:",
-    metaSection: isQuote ? "Quotation meta" : "Invoice meta",
-    numberField: isQuote ? "Quotation #" : "Invoice #",
-    grandTotalLabel: isQuote ? "QUOTED TOTAL :" : "GRAND TOTAL :",
-    termsHeading: isQuote ? "Quotation terms:" : "Term and Conditions:",
+    title: isDelivery ? "DELIVERY NOTE" : isQuote ? "QUOTATION" : "INVOICE",
+    subtitle: isDelivery
+      ? "Shipping document — not an invoice"
+      : isQuote
+        ? "Price estimate — not a tax invoice"
+        : "",
+    numberLabel: isDelivery ? "Delivery note no :" : isQuote ? "Quotation no :" : "Invoice no :",
+    billToLabel: isDelivery ? "Deliver to:" : isQuote ? "Quotation for:" : "Invoice to:",
+    dueLabel: isDelivery ? "Delivery date:" : isQuote ? "Valid until:" : "Due:",
+    issueDateLabel: isDelivery ? "Note date:" : isQuote ? "Quotation date:" : "Issue date:",
+    referenceLabel: isDelivery ? "Order / PO reference:" : "",
+    metaSection: isDelivery ? "Delivery details" : isQuote ? "Quotation meta" : "Invoice meta",
+    numberField: isDelivery ? "Delivery Note #" : isQuote ? "Quotation #" : "Invoice #",
+    grandTotalLabel: isDelivery ? "TOTAL VALUE :" : isQuote ? "QUOTED TOTAL :" : "GRAND TOTAL :",
+    termsHeading: isDelivery ? "Delivery instructions:" : isQuote ? "Quotation terms:" : "Term and Conditions:",
     thankYouDefault: defs.thankYou,
     termsDefault: defs.terms,
     disclaimerDefault: defs.disclaimer,
-    showPaymentSchedule: !isQuote,
-    showPaymentMethods: !isQuote,
-    showStamp: !isQuote,
-    saveButtonLabel: isQuote ? "Save Quotation" : "Save Invoice",
-    termsSectionLabel: isQuote ? "Quotation terms" : "Terms",
+    showPrices: true,
+    showTotals: true,
+    showMarkColumn: isDelivery,
+    showPaymentSchedule: kind === "invoice",
+    showPaymentMethods: kind === "invoice",
+    showStamp: !isDelivery,
+    saveButtonLabel: isDelivery ? "Save Delivery Note" : isQuote ? "Save Quotation" : "Save Invoice",
+    termsSectionLabel: isDelivery ? "Delivery notes" : isQuote ? "Quotation terms" : "Terms",
     thankYouFieldLabel: isQuote ? "Closing line" : "Thank you line",
-    termsFieldLabel: isQuote ? "Quotation terms & conditions" : "Terms and conditions",
-    acceptanceHeading: isQuote ? "Client acceptance" : "",
+    termsFieldLabel: isDelivery
+      ? "Delivery instructions & notes"
+      : isQuote
+        ? "Quotation terms & conditions"
+        : "Terms and conditions",
+    acceptanceHeading: isQuote ? "Client acceptance" : isDelivery ? "Proof of receipt" : "",
     preparedByLabel: isQuote ? "Prepared by:" : "",
+  }
+}
+
+function isMoneyColumnKey(key: string): boolean {
+  return /price|amount|total|subtotal/i.test(key) && key !== "qty"
+}
+
+function deliveryNoteColumns(columns: ExtraTableColumn[]): ExtraTableColumn[] {
+  if (columns.some((col) => col.key === "mark")) return columns
+  return [...columns, { key: "mark", label: "Mark", align: "center" as const }]
+}
+
+function markCellHtml(): string {
+  return `<span style="display:inline-block;width:13px;height:13px;border:1.5px solid #334155;"></span>`
+}
+
+function extractSourceLinePricesFromPayload(payload: Record<string, any>): SourceLinePrice[] {
+  const items: SourceLinePrice[] = []
+  if (Array.isArray(payload.items)) {
+    for (const it of payload.items) {
+      const description = String(it?.description || it?.item || "").trim()
+      if (!description) continue
+      items.push({
+        description,
+        quantity: Number(it?.quantity || it?.qty || 0),
+        unitPrice: Number(it?.unitPrice || 0),
+      })
+    }
+  }
+  const sections = payload?.projectTables?.sections
+  if (Array.isArray(sections)) {
+    for (const section of sections) {
+      const rows = Array.isArray(section?.rows) ? section.rows : []
+      for (const row of rows) {
+        const description = String(row?.item || row?.description || "").trim()
+        if (!description) continue
+        const qty = Number(String(row?.qty || row?.quantity || "0").replace(/,/g, "")) || 0
+        const unitRaw = row?.unitPrice || row?.price
+        let unitPrice = Number(String(unitRaw || "0").replace(/,/g, "")) || 0
+        if (!unitPrice && row?.totalPrice && qty > 0) {
+          unitPrice = Number(String(row.totalPrice).replace(/,/g, "")) / qty
+        }
+        if (!unitPrice && row?.amount && qty > 0) {
+          unitPrice = Number(String(row.amount).replace(/,/g, "")) / qty
+        }
+        items.push({ description, quantity: qty, unitPrice })
+      }
+    }
+  }
+  return items
+}
+
+async function fetchSourceLinePrices(referenceNumber: string): Promise<SourceLinePrice[]> {
+  const ref = referenceNumber.trim()
+  if (!ref) return []
+
+  const preset = getDeliveryNotePresetByReference(ref)
+  if (preset) return presetToSourceLinePrices(preset)
+
+  try {
+    const res = await fetch(`/api/admin/invoices?invoiceNumber=${encodeURIComponent(ref)}`, {
+      cache: "no-store",
+      credentials: "include",
+    })
+    const data = await res.json()
+    if (!res.ok || !data?.invoice?.payload) return []
+    return extractSourceLinePricesFromPayload(data.invoice.payload as Record<string, any>)
+  } catch {
+    return []
   }
 }
 
@@ -164,11 +253,13 @@ function SavedItemPicker({
   onSelect,
   disabled,
   className,
+  hidePrices = false,
 }: {
   items: SavedLineItemCatalogEntry[]
   onSelect: (item: SavedLineItemCatalogEntry) => void
   disabled?: boolean
   className?: string
+  hidePrices?: boolean
 }) {
   return (
     <select
@@ -190,7 +281,7 @@ function SavedItemPicker({
       <option value="">{items.length ? "Pick saved item…" : "No saved items yet"}</option>
       {items.map((item) => (
         <option key={item.key} value={item.key}>
-          {item.name} ({item.quantity} × {money(item.unitPrice)})
+          {hidePrices ? `${item.name} (qty ${item.quantity})` : `${item.name} (${item.quantity} × ${money(item.unitPrice)})`}
         </option>
       ))}
     </select>
@@ -230,6 +321,7 @@ function columnWidthForKey(key: string): string {
   if (key === "qty") return "12%"
   if (key === "unitPrice") return "18%"
   if (key === "totalPrice" || key === "amount") return "18%"
+  if (key === "mark") return "8%"
   return "18%"
 }
 
@@ -265,6 +357,7 @@ function displayProjectTableCell(
   currency: string
 ): string {
   if (isSerialColumnKey(col.key)) return String(rowIndex + 1)
+  if (col.key === "mark") return ""
   return displayProjectCellValue(row[col.key] ?? "", col.key, currency)
 }
 
@@ -463,11 +556,15 @@ export default function AdminInvoicesPage({
   extraTables,
   dashboardScope = "main",
   savedListHref = "/dashboard/invoices/list",
+  initialDocumentKind,
+  lockDocumentKind = false,
 }: {
   initialValues?: InvoiceInitialValues
   extraTables?: InvoiceExtraTables
   dashboardScope?: "main" | "project"
   savedListHref?: string
+  initialDocumentKind?: DocumentKind
+  lockDocumentKind?: boolean
 }) {
   const { themeClasses } = useTheme()
   const { toast } = useToast()
@@ -478,8 +575,12 @@ export default function AdminInvoicesPage({
   const signatureInputRef = useRef<HTMLInputElement | null>(null)
   const stampInputRef = useRef<HTMLInputElement | null>(null)
   const termsTextareaRef = useRef<HTMLTextAreaElement | null>(null)
-  const [invoiceNumber, setInvoiceNumber] = useState(`INV-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`)
-  const [documentKind, setDocumentKind] = useState<DocumentKind>("invoice")
+  const defaultDocNumber =
+    initialDocumentKind === "delivery_note"
+      ? `DN-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`
+      : `INV-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`
+  const [invoiceNumber, setInvoiceNumber] = useState(defaultDocNumber)
+  const [documentKind, setDocumentKind] = useState<DocumentKind>(initialDocumentKind || "invoice")
   const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10))
   const [dueDate, setDueDate] = useState(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
   const [fromName, setFromName] = useState(initialValues?.fromName ?? "Honic Company Store")
@@ -510,8 +611,16 @@ export default function AdminInvoicesPage({
   const [discount, setDiscount] = useState(0)
   const [thankYouLine, setThankYouLine] = useState("Thank you for your business.")
   const [quotationScope, setQuotationScope] = useState("")
+  const [itemsTableTitle, setItemsTableTitle] = useState("")
+  const [referenceNumber, setReferenceNumber] = useState("")
+  const [backorderedNote, setBackorderedNote] = useState("")
   const [items, setItems] = useState<InvoiceItem[]>([
-    { id: "1", description: "Product or service", quantity: 1, unitPrice: 0 },
+    {
+      id: "1",
+      description: initialDocumentKind === "delivery_note" ? "Item description" : "Product or service",
+      quantity: 1,
+      unitPrice: 0,
+    },
   ])
   const [savedItemCatalog, setSavedItemCatalog] = useState<SavedLineItemCatalogEntry[]>([])
   const [isLoadingSavedItems, setIsLoadingSavedItems] = useState(false)
@@ -535,7 +644,7 @@ export default function AdminInvoicesPage({
   const clientNameParam = searchParams.get("clientName")
   const studioMode = searchParams.get("mode")
   const isPreviewOnly = studioMode === "preview"
-  const backToSavedInvoice = savedInvoiceId ? `/dashboard/invoices/list/${savedInvoiceId}?tab=preview` : "/dashboard/invoices/list"
+  const backToSavedInvoice = savedInvoiceId ? `${savedListHref}/${savedInvoiceId}?tab=preview` : savedListHref
 
   useEffect(() => {
     if (!savedInvoiceId) return
@@ -551,7 +660,8 @@ export default function AdminInvoicesPage({
         const p = inv?.payload || {}
 
         setInvoiceNumber(String(inv?.invoice_number || p.invoiceNumber || ""))
-        setDocumentKind(p.documentKind === "quotation" ? "quotation" : "invoice")
+        const savedKind = String(p.documentKind || "invoice")
+        setDocumentKind(savedKind === "quotation" || savedKind === "delivery_note" ? (savedKind as DocumentKind) : "invoice")
         setIssueDate(String(inv?.issue_date || p.issueDate || ""))
         setDueDate(String(inv?.due_date || p.dueDate || ""))
         setCurrency(String(inv?.currency || p.currency || "TZS"))
@@ -574,6 +684,9 @@ export default function AdminInvoicesPage({
         setThankYouLine(String(p.thankYouLine || thankYouLine))
         setTermsText(String(p.termsText || termsText))
         setQuotationScope(String(p.quotationScope || ""))
+        setItemsTableTitle(String(p.itemsTableTitle || ""))
+        setReferenceNumber(String(p.referenceNumber || ""))
+        setBackorderedNote(String(p.backorderedNote || ""))
         if (p.documentKind === "quotation" && p.quotationDisclaimer && typeof p.termsText === "string") {
           const disc = String(p.quotationDisclaimer)
           const terms = String(p.termsText || "")
@@ -583,18 +696,26 @@ export default function AdminInvoicesPage({
         }
         if (typeof p.invoiceLogo === "string" && p.invoiceLogo) setInvoiceLogo(p.invoiceLogo)
         if (typeof p.signatureImage === "string" && p.signatureImage) setSignatureImage(p.signatureImage)
-        if (typeof p.stampImage === "string" && p.stampImage) setStampImage(p.stampImage)
+        setStampImage(typeof p.stampImage === "string" ? p.stampImage : "")
 
+        let loadedItems: InvoiceItem[] = []
         if (Array.isArray(p.items) && p.items.length) {
-          setItems(
-            p.items.map((it: any, idx: number) => ({
-              id: `${Date.now()}-${idx}`,
-              description: String(it.description || ""),
-              quantity: Number(it.quantity || 0),
-              unitPrice: Number(it.unitPrice || 0),
-            }))
-          )
+          loadedItems = p.items.map((it: any, idx: number) => ({
+            id: `${Date.now()}-${idx}`,
+            description: String(it.description || ""),
+            quantity: Number(it.quantity || 0),
+            unitPrice: Number(it.unitPrice || 0),
+          }))
         }
+
+        const refNo = String(p.referenceNumber || "")
+        if (savedKind === "delivery_note" && refNo && loadedItems.length) {
+          const sourcePrices = await fetchSourceLinePrices(refNo)
+          if (sourcePrices.length) {
+            loadedItems = applyDocumentPricesToItems(loadedItems, sourcePrices)
+          }
+        }
+        if (loadedItems.length) setItems(loadedItems)
 
         if (Array.isArray(p.paymentMethods) && p.paymentMethods.length) {
           setPaymentMethods(
@@ -631,6 +752,54 @@ export default function AdminInvoicesPage({
     setBillToName(clientNameParam)
   }, [clientNameParam, savedInvoiceId])
 
+  useEffect(() => {
+    if (savedInvoiceId) return
+    const presetId = searchParams.get("preset")
+    if (!presetId) return
+    const preset = getDeliveryNotePreset(presetId)
+    if (!preset) return
+
+    const today = new Date().toISOString().slice(0, 10)
+    setDocumentKind("delivery_note")
+    setIssueDate(today)
+    setDueDate(today)
+    setBillToName(preset.billToName)
+    setBillToAddress(preset.billToAddress || "")
+    setReferenceNumber(preset.referenceNumber)
+    if (preset.fromName) setFromName(preset.fromName)
+    if (preset.fromEmail) setFromEmail(preset.fromEmail)
+    if (preset.fromPhone) setFromPhone(preset.fromPhone)
+    const presetItems = preset.items.map((it, idx) => ({
+      id: `preset-${Date.now()}-${idx}`,
+      description: it.description,
+      quantity: it.quantity,
+      unitPrice: it.unitPrice ?? 0,
+    }))
+    setItems(applyDocumentPricesToItems(presetItems, presetToSourceLinePrices(preset)))
+    const refSlug = preset.referenceNumber.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "")
+    setInvoiceNumber(`DN-${new Date().getFullYear()}-${refSlug}`)
+    toast({
+      title: "Delivery note loaded",
+      description: `${preset.label} — ${preset.items.length} items, dated today.`,
+    })
+  }, [savedInvoiceId, searchParams, toast])
+
+  useEffect(() => {
+    if (documentKind !== "delivery_note") return
+    if (!referenceNumber.trim()) return
+    if (isLoadingSavedInvoice) return
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      const sourcePrices = await fetchSourceLinePrices(referenceNumber)
+      if (cancelled || !sourcePrices.length) return
+      setItems((prev) => (prev.length ? applyDocumentPricesToItems(prev, sourcePrices) : prev))
+    }, 400)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [referenceNumber, documentKind, isLoadingSavedInvoice])
+
   const refreshSavedItemCatalog = async () => {
     setIsLoadingSavedItems(true)
     try {
@@ -651,6 +820,7 @@ export default function AdminInvoicesPage({
   }, [])
 
   useEffect(() => {
+    if (savedInvoiceId) return
     try {
       const savedLogo = localStorage.getItem(LOGO_STORAGE_KEY)
       if (savedLogo) setInvoiceLogo(savedLogo)
@@ -661,7 +831,7 @@ export default function AdminInvoicesPage({
     } catch {
       // ignore storage access failures
     }
-  }, [])
+  }, [savedInvoiceId])
 
   useEffect(() => {
     if (!invoiceLogo) return
@@ -686,8 +856,13 @@ export default function AdminInvoicesPage({
   const total = useMemo(() => Math.max(0, subtotal + taxAmount - discount), [subtotal, taxAmount, discount])
 
   const websiteDisplay = companyWebsite.replace(/^https?:\/\//i, "").toLowerCase()
+  const websiteHref = /^https?:\/\//i.test(companyWebsite.trim())
+    ? companyWebsite.trim()
+    : `https://${websiteDisplay}`
   const docLabels = useMemo(() => documentKindLabels(documentKind), [documentKind])
   const isQuotation = documentKind === "quotation"
+  const isDeliveryNote = documentKind === "delivery_note"
+  const isInvoice = documentKind === "invoice"
   const effectiveThankYou = thankYouLine.trim() || docLabels.thankYouDefault
   const effectiveTerms = termsText.trim() || docLabels.termsDefault
   const preparedByFooter = `${fromName || "—"} · ${fromEmail || "—"} · ${fromPhone || "—"}`
@@ -791,7 +966,7 @@ export default function AdminInvoicesPage({
 
   const autoFillScheduleDeadlines = useCallback(
     (startIso: string) => {
-      if (!hasProjectTables || isQuotation || !startIso) return
+      if (!hasProjectTables || !isInvoice || !startIso) return
       const deadlines = computeAutoScheduleDeadlines(startIso, PAYMENT_SCHEDULE_PHASE_COUNT)
       if (deadlines.every((d) => !d)) return
       setProjectTables((prev) => {
@@ -805,7 +980,7 @@ export default function AdminInvoicesPage({
         }
       })
     },
-    [hasProjectTables, isQuotation]
+    [hasProjectTables, isInvoice]
   )
 
   const handleIssueDateChange = (value: string) => {
@@ -814,10 +989,10 @@ export default function AdminInvoicesPage({
   }
 
   useEffect(() => {
-    if (savedInvoiceId || isLoadingSavedInvoice || !hasProjectTables || isQuotation || !issueDate) return
+    if (savedInvoiceId || isLoadingSavedInvoice || !hasProjectTables || !isInvoice || !issueDate) return
     autoFillScheduleDeadlines(issueDate)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initial fill only; issue date edits use handleIssueDateChange
-  }, [savedInvoiceId, isLoadingSavedInvoice, hasProjectTables, isQuotation, autoFillScheduleDeadlines])
+  }, [savedInvoiceId, isLoadingSavedInvoice, hasProjectTables, isInvoice, autoFillScheduleDeadlines])
 
   const updateItem = (id: string, patch: Partial<InvoiceItem>) => {
     setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)))
@@ -1109,11 +1284,24 @@ export default function AdminInvoicesPage({
     const rowStripe = INV.rowStripe
     const rows = items
       .map((item, index) => {
-        const rowTotal = item.quantity * item.unitPrice
         const rowBg =
           index % 2 === 1
             ? `background-color:${rowStripe} !important; -webkit-print-color-adjust: exact; print-color-adjust: exact;`
             : `background-color: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact;`
+        if (isDeliveryNote) {
+          const rowTotal = item.quantity * item.unitPrice
+          return `
+          <tr style="${rowBg}">
+            <td style="font-size:12px;text-align:center;color:#111;">${index + 1}</td>
+            <td style="font-size:12px;color:#111;">${escapeHtml(item.description || "—")}</td>
+            <td style="font-size:12px;text-align:right;color:#111;">${item.quantity}</td>
+            <td style="font-size:12px;text-align:right;color:#111;">${money(item.unitPrice)}</td>
+            <td style="font-size:12px;text-align:right;font-weight:600;color:#111;">${money(rowTotal)}</td>
+            <td style="font-size:12px;text-align:center;color:#111;">${markCellHtml()}</td>
+          </tr>
+        `
+        }
+        const rowTotal = item.quantity * item.unitPrice
         return `
           <tr style="${rowBg}">
             <td style="font-size:12px;text-align:center;color:#111;">${index + 1}</td>
@@ -1157,7 +1345,8 @@ export default function AdminInvoicesPage({
     const extraSectionsHtml = visibleProjectSections(projectTables?.sections)
       .map((section) => {
         const isPrototype = isPrototypeSectionTitle(section.title)
-        const cols = section.columns
+        const displayCols = isDeliveryNote ? deliveryNoteColumns(section.columns) : section.columns
+        const cols = displayCols
           .map(
             (col) =>
               `<th class="${
@@ -1165,13 +1354,16 @@ export default function AdminInvoicesPage({
               }" style="width:${columnWidthForKey(col.key)};">${escapeHtml(columnHeaderLabel(col, currency))}</th>`
           )
           .join("")
-        const colgroup = `<colgroup>${section.columns
+        const colgroup = `<colgroup>${displayCols
           .map((col) => `<col style="width:${columnWidthForKey(col.key)};" />`)
           .join("")}</colgroup>`
         const rowsHtml = section.rows
           .map((row, rowIndex) => {
-            const cells = section.columns
+            const cells = displayCols
               .map((col) => {
+                if (col.key === "mark") {
+                  return `<td class="c">${markCellHtml()}</td>`
+                }
                 const value = displayProjectTableCell(row, col, rowIndex, currency)
                 const klass = col.align === "right" ? "r" : col.align === "center" ? "c" : ""
                 const rowRed = isPrototype && isPrototypeRowHighlighted(row)
@@ -1181,8 +1373,7 @@ export default function AdminInvoicesPage({
             return `<tr style="${rowIndex % 2 === 1 ? `background-color:${rowStripe} !important;` : ""}">${cells}</tr>`
           })
           .join("")
-        const computedSubtotal = getSectionSubtotal(section)
-        const subtotalRow = `<tr><td colspan="${Math.max(1, section.columns.length - 1)}" style="text-align:right;font-weight:800;">SUBTOTAL</td><td class="r" style="font-weight:800;">${money(computedSubtotal)}</td></tr>`
+        const subtotalRow = `<tr><td colspan="${Math.max(1, displayCols.length - 1)}" style="text-align:right;font-weight:800;">SUBTOTAL</td><td class="r" style="font-weight:800;">${money(getSectionSubtotal(section))}</td></tr>`
         return `
           <div class="extra-block">
             <p class="extra-title">${escapeHtml(section.title)}</p>
@@ -1268,10 +1459,9 @@ export default function AdminInvoicesPage({
     const signBoldSignatureHtml = signatureImage
       ? `<p class="sign-b"><img src="${signatureImage}" alt="" /></p>`
       : ""
-    const stampBelowSignatureHtml =
-      docLabels.showStamp && stampImage
-        ? `<p class="sign-stamp"><img src="${stampImage}" alt="" /></p>`
-        : ""
+    const stampBelowSignatureHtml = stampImage
+      ? `<p class="sign-stamp"><img src="${stampImage}" alt="" /></p>`
+      : ""
     const quoteScopeHtml =
       isQuotation && quotationScope.trim()
         ? `<p class="quote-scope">${escapeHtml(quotationScope.trim())}</p>`
@@ -1286,8 +1476,35 @@ export default function AdminInvoicesPage({
           <div class="quote-accept-line"></div>
         </div>`
       : ""
-    const quoteSubtitleHtml = isQuotation && docLabels.subtitle
+    const deliveryReceiptHtml = isDeliveryNote
+      ? `<div class="quote-accept">
+          <p class="quote-accept-title">${escapeHtml(docLabels.acceptanceHeading)}</p>
+          <p class="quote-accept-lbl">Received by (print name)</p>
+          <div class="quote-accept-line"></div>
+          <p class="quote-accept-lbl" style="margin-top:12px;">Signature</p>
+          <div class="quote-accept-line"></div>
+          <p class="quote-accept-lbl" style="margin-top:12px;">Date received</p>
+          <div class="quote-accept-line"></div>
+          <p class="quote-accept-lbl" style="margin-top:12px;">Comments (missing / damaged items)</p>
+          <div class="quote-accept-line" style="min-height:48px;"></div>
+        </div>`
+      : ""
+    const referenceHtml =
+      isDeliveryNote && referenceNumber.trim()
+        ? `<p class="inv-date" style="margin-top:4px;">${escapeHtml(docLabels.referenceLabel)} ${escapeHtml(referenceNumber.trim())}</p>`
+        : ""
+    const backorderedHtml =
+      isDeliveryNote && backorderedNote.trim()
+        ? `<div class="extra-block" style="margin-top:12px;">
+            <p class="extra-title">Missing / backordered items</p>
+            <p style="margin:0;font-size:12px;white-space:pre-line;color:#374151;">${escapeHtml(backorderedNote.trim())}</p>
+          </div>`
+        : ""
+    const quoteSubtitleHtml = (isQuotation || isDeliveryNote) && docLabels.subtitle
       ? `<div class="quote-sub">${escapeHtml(docLabels.subtitle)}</div>`
+      : ""
+    const itemsTableTitleHtml = itemsTableTitle.trim()
+      ? `<p class="items-table-title">${escapeHtml(itemsTableTitle.trim())}</p>`
       : ""
 
     const buildInvoiceHtml = () => `
@@ -1327,6 +1544,9 @@ export default function AdminInvoicesPage({
             .tag { font-size: 10px; font-weight: 800; color: #374151; letter-spacing: 0.12em; text-transform: uppercase; margin-top: 2px; }
             .inv-title { font-size: 36px; font-weight: 800; color: ${blue}; letter-spacing: 0.04em; line-height: 1; }
             .line-wrap { position: relative; margin-top: 14px; min-height: 1px; }
+            .url-row { text-align: right; font-size: 9px; font-weight: 600; margin-top: 6px; letter-spacing: 0.02em; }
+            .url-row a { color: #475569; text-decoration: none; }
+            .items-table-title { margin: 16px 0 8px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: #0f172a; }
             /* border-top prints reliably; thin background divs often disappear in “Save as PDF” */
             .line-bg { width: 100%; height: 0; margin: 0; padding: 0; border: 0; border-top: 1px solid #d1d5db; }
             .line-accent { position: absolute; left: 0; top: 0; width: 96px; height: 0; border: 0; border-top: 3px solid ${blue}; }
@@ -1429,6 +1649,7 @@ export default function AdminInvoicesPage({
             <div class="line-wrap">
               <div class="line-bg"></div>
               <div class="line-accent"></div>
+              <div class="url-row"><a href="${escapeHtml(websiteHref)}" target="_blank" rel="noopener noreferrer">${escapeHtml(websiteDisplay)}</a></div>
             </div>
             <div class="meta">
               <div>
@@ -1441,12 +1662,35 @@ export default function AdminInvoicesPage({
                 <p class="inv-no">${escapeHtml(docLabels.numberLabel)} ${escapeHtml(invoiceNumber)}</p>
                 <p class="inv-date">${escapeHtml(docLabels.issueDateLabel)} ${escapeHtml(formatLongDate(issueDate))}</p>
                 <p class="inv-date" style="color:#6b7280;margin-top:4px;">${escapeHtml(docLabels.dueLabel)} ${escapeHtml(formatLongDate(dueDate))}</p>
+                ${referenceHtml}
               </div>
             </div>
             ${
               hasProjectTables
                 ? ""
-                : `<table style="table-layout:fixed;">
+                : isDeliveryNote
+                  ? `${itemsTableTitleHtml}<table style="table-layout:fixed;">
+              <colgroup>
+                <col style="width:${columnWidthForKey("sn")};" />
+                <col style="width:${columnWidthForKey("item")};" />
+                <col style="width:${columnWidthForKey("qty")};" />
+                <col style="width:${columnWidthForKey("unitPrice")};" />
+                <col style="width:${columnWidthForKey("totalPrice")};" />
+                <col style="width:${columnWidthForKey("mark")};" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th class="c">NO</th>
+                  <th>ITEM / DESCRIPTION</th>
+                  <th class="r">QTY</th>
+                  <th class="r">PRICE (${escapeHtml(currency)})</th>
+                  <th class="r">TOTAL (${escapeHtml(currency)})</th>
+                  <th class="c">MARK</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>`
+                  : `${itemsTableTitleHtml}<table style="table-layout:fixed;">
               <colgroup>
                 <col style="width:${columnWidthForKey("sn")};" />
                 <col style="width:${columnWidthForKey("item")};" />
@@ -1467,14 +1711,19 @@ export default function AdminInvoicesPage({
             </table>`
             }
             ${extraSectionsHtml}
-            <div class="totals">
+            ${backorderedHtml}
+            ${
+              docLabels.showTotals
+                ? `<div class="totals">
               <div class="sum">
                 <div class="sumline"><span>Sub Total :</span><span>${currency} ${money(effectiveSubtotal)}</span></div>
                 <div class="sumline"><span>Tax ${taxRate}% :</span><span>${currency} ${money(effectiveTaxAmount)}</span></div>
                 ${discountRow}
                 <div class="grand"><span>${escapeHtml(docLabels.grandTotalLabel)}</span><span>${currency} ${money(effectiveGrandTotal)}</span></div>
               </div>
-            </div>
+            </div>`
+                : ""
+            }
             ${showPaymentScheduleTable ? paymentScheduleHtml : ""}
             ${docLabels.showPaymentMethods ? paymentMethodHtml : ""}
             <div class="foot">
@@ -1484,11 +1733,12 @@ export default function AdminInvoicesPage({
                 <p style="margin:0;white-space:pre-line;">${convertInlineBoldToHtml(effectiveTerms || "—")}</p>
               </div>
               <div class="sign">
-                <p class="sign-name">${escapeHtml(signerName)}</p>
-                ${signBoldSignatureHtml}
-                <p class="sign-t">${escapeHtml(signerTitle)}</p>
+                ${isDeliveryNote ? `<p class="sign-name" style="font-size:11px;">Dispatched by: ${escapeHtml(signerName)}</p>` : `<p class="sign-name">${escapeHtml(signerName)}</p>`}
+                ${isDeliveryNote ? "" : signBoldSignatureHtml}
+                ${isDeliveryNote ? "" : `<p class="sign-t">${escapeHtml(signerTitle)}</p>`}
                 ${stampBelowSignatureHtml}
                 ${quoteAcceptHtml}
+                ${deliveryReceiptHtml}
               </div>
             </div>
             <div class="bar">
@@ -1588,17 +1838,19 @@ export default function AdminInvoicesPage({
     const silent = Boolean(options?.silent)
     if (!billToName.trim()) {
       if (!silent) {
-        toast({
-          title: "Client name required",
-          description: `Please fill ${isQuotation ? "Quotation for" : "Invoice to"} (client name) before saving.`,
-          variant: "destructive",
-        })
+      toast({
+        title: "Client name required",
+        description: `Please fill ${
+          isQuotation ? "Quotation for" : documentKind === "delivery_note" ? "Delivery to" : "Invoice to"
+        } (client name) before saving.`,
+        variant: "destructive",
+      })
       }
       return
     }
 
     const hasMissingPaymentRequired =
-      !isQuotation &&
+      isInvoice &&
       paymentMethods.some(
         (pm) => !String(pm.accountName || "").trim() || !String(pm.bank || "").trim() || !String(pm.account || "").trim()
       )
@@ -1640,6 +1892,9 @@ export default function AdminInvoicesPage({
       thankYouLine,
       termsText,
       quotationScope,
+      itemsTableTitle,
+      referenceNumber,
+      backorderedNote,
       items,
       paymentMethods,
       projectTables,
@@ -1677,7 +1932,7 @@ export default function AdminInvoicesPage({
       }
       if (!silent) {
         toast({
-          title: "Invoice saved",
+          title: isDeliveryNote ? "Delivery note saved" : "Invoice saved",
           description: `${String(data?.invoice?.invoice_number || invoiceNumber)} saved for ${billToName.trim()}.`,
         })
       }
@@ -1701,9 +1956,11 @@ export default function AdminInvoicesPage({
     <div className={cn("space-y-6", themeClasses.mainText)}>
       <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Invoice Studio</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{documentKind === "delivery_note" ? "Delivery Note Studio" : "Invoice Studio"}</h1>
           <p className={cn("mt-1 text-sm", themeClasses.textNeutralSecondary)}>
-            Blue header style, zebra rows, payment block — matches classic agency invoices.
+            {documentKind === "delivery_note"
+              ? "Professional shipping document — item quantities only, proof of receipt."
+              : "Blue header style, zebra rows, payment block — matches classic agency invoices."}
           </p>
           {savedInvoiceId ? (
             <p className={cn("mt-1 text-xs", themeClasses.textNeutralSecondary)}>
@@ -1712,7 +1969,7 @@ export default function AdminInvoicesPage({
           ) : null}
         </div>
         <div className="flex flex-col items-stretch gap-3 sm:items-end">
-          {!isPreviewOnly ? (
+          {!isPreviewOnly && !lockDocumentKind ? (
             <div className="inline-flex self-start rounded-lg border border-border p-0.5 sm:self-end">
               <Button
                 type="button"
@@ -1738,6 +1995,18 @@ export default function AdminInvoicesPage({
               >
                 Quotation
               </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={documentKind === "delivery_note" ? "default" : "ghost"}
+                className={cn(
+                  "h-8 rounded-md px-4 text-xs font-semibold",
+                  documentKind === "delivery_note" && "bg-[#184a96] text-white hover:bg-[#184a96]/90"
+                )}
+                onClick={() => switchDocumentKind("delivery_note")}
+              >
+                Delivery Note
+              </Button>
             </div>
           ) : (
             <span className="self-start rounded-md bg-muted px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:self-end">
@@ -1754,7 +2023,9 @@ export default function AdminInvoicesPage({
             </Button>
           ) : null}
           <Button variant="outline" asChild>
-            <Link href={savedListHref}>View Saved Invoices</Link>
+            <Link href={savedListHref}>
+              {documentKind === "delivery_note" ? "View Saved Delivery Notes" : "View Saved Invoices"}
+            </Link>
           </Button>
           {!isPreviewOnly ? (
             <Button variant="outline" onClick={saveInvoiceToDatabase} className="gap-2" disabled={isSavingInvoice}>
@@ -1868,6 +2139,7 @@ export default function AdminInvoicesPage({
               </button>
               {detailSectionVisible.invoiceMeta ? (
             <div className="space-y-3">
+              {!lockDocumentKind ? (
               <div>
                 <label className={cn("mb-1.5 block text-xs font-medium", themeClasses.textNeutralSecondary)}>Document type</label>
                 <div className="inline-flex rounded-lg border border-border p-0.5">
@@ -1895,10 +2167,33 @@ export default function AdminInvoicesPage({
                   >
                     Quotation
                   </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={documentKind === "delivery_note" ? "default" : "ghost"}
+                    className={cn(
+                      "h-8 rounded-md px-4 text-xs font-semibold",
+                      documentKind === "delivery_note" && "bg-[#184a96] text-white hover:bg-[#184a96]/90"
+                    )}
+                    onClick={() => switchDocumentKind("delivery_note")}
+                  >
+                    Delivery Note
+                  </Button>
                 </div>
               </div>
+              ) : null}
               {isQuotation ? (
                 <>
+                  <div>
+                    <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>
+                      Items table title
+                    </label>
+                    <Input
+                      value={itemsTableTitle}
+                      onChange={(e) => setItemsTableTitle(e.target.value)}
+                      placeholder="Heading shown above the line items table"
+                    />
+                  </div>
                   <div>
                     <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>
                       Scope / project summary
@@ -1907,6 +2202,35 @@ export default function AdminInvoicesPage({
                       value={quotationScope}
                       onChange={(e) => setQuotationScope(e.target.value)}
                       placeholder="Brief description of what this quotation covers…"
+                      rows={2}
+                      className="min-h-[56px] resize-y text-sm"
+                    />
+                  </div>
+                </>
+              ) : null}
+              {isDeliveryNote ? (
+                <>
+                  <div>
+                    <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>
+                      Order / PO reference
+                    </label>
+                    <Input
+                      value={referenceNumber}
+                      onChange={(e) => setReferenceNumber(e.target.value)}
+                      placeholder="e.g. HC-PI-2026-017"
+                    />
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Line prices auto-fill from the linked quotation or invoice.
+                    </p>
+                  </div>
+                  <div>
+                    <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>
+                      Missing / backordered items
+                    </label>
+                    <Textarea
+                      value={backorderedNote}
+                      onChange={(e) => setBackorderedNote(e.target.value)}
+                      placeholder="List any items not included in this shipment…"
                       rows={2}
                       className="min-h-[56px] resize-y text-sm"
                     />
@@ -1982,7 +2306,7 @@ export default function AdminInvoicesPage({
                       {section.title}
                     </label>
                   ))}
-                  {!isQuotation && projectTables?.paymentSchedule?.length ? (
+                  {isInvoice && projectTables?.paymentSchedule?.length ? (
                     <label className="flex items-center gap-2 text-sm text-slate-700">
                       <input
                         type="checkbox"
@@ -1999,7 +2323,9 @@ export default function AdminInvoicesPage({
                 </p>
                 {projectTables?.sections?.map((section, sectionIndex) => {
                   const prototypeSection = isPrototypeSectionTitle(section.title)
-                  const editColumns = editableProjectColumns(section)
+                  const editColumns = isDeliveryNote
+                    ? deliveryNoteColumns(editableProjectColumns(section))
+                    : editableProjectColumns(section)
                   const projectRowGridClass = projectEditRowGridClass(section)
                   const sectionVisible = isProjectSectionVisible(section)
                   return (
@@ -2036,6 +2362,7 @@ export default function AdminInvoicesPage({
                                   <SavedItemPicker
                                     items={savedItemCatalog}
                                     disabled={isLoadingSavedItems}
+                                    hidePrices={false}
                                     onSelect={(saved) => applySavedItemToProjectRow(sectionIndex, rowIndex, saved)}
                                   />
                                   <Input
@@ -2094,7 +2421,7 @@ export default function AdminInvoicesPage({
                   </div>
                 );
                 })}
-                {hasProjectTables && !isQuotation && projectTables?.paymentSchedule?.length ? (
+                {hasProjectTables && isInvoice && projectTables?.paymentSchedule?.length ? (
                   <div className={cn("rounded-lg border border-border/80 p-3", projectTables.hidePaymentSchedule && "opacity-60")}>
                     <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
                       <p className="text-xs font-extrabold uppercase tracking-wide text-slate-700">Payment schedule</p>
@@ -2147,7 +2474,9 @@ export default function AdminInvoicesPage({
             ) : (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className={cn("text-xs font-semibold uppercase tracking-wide", themeClasses.textNeutralSecondary)}>Line items</p>
+                  <p className={cn("text-xs font-semibold uppercase tracking-wide", themeClasses.textNeutralSecondary)}>
+                    {isDeliveryNote ? "Items delivered" : "Line items"}
+                  </p>
                   <Button size="sm" variant="outline" onClick={addItem} className="gap-1">
                     <Plus className="h-3.5 w-3.5" />
                     Add
@@ -2159,11 +2488,12 @@ export default function AdminInvoicesPage({
                       <SavedItemPicker
                         items={savedItemCatalog}
                         disabled={isLoadingSavedItems}
+                        hidePrices={false}
                         onSelect={(saved) => applySavedItemToLine(item.id, saved)}
                       />
                       <Input
                         value={item.description}
-                        placeholder="Description"
+                        placeholder={isDeliveryNote ? "Item description" : "Description"}
                         onChange={(e) => updateItem(item.id, { description: e.target.value })}
                       />
                     </div>
@@ -2173,19 +2503,21 @@ export default function AdminInvoicesPage({
                       className="col-span-4 sm:col-span-2"
                       value={item.quantity}
                       onChange={(e) => updateItem(item.id, { quantity: Math.max(1, Number(e.target.value) || 1) })}
+                      placeholder="Qty"
                     />
                     <Input
                       type="number"
                       min={0}
-                      className="col-span-5 sm:col-span-4"
+                      className={cn("col-span-4 sm:col-span-2", isDeliveryNote && "cursor-default bg-muted/50")}
                       value={item.unitPrice}
+                      readOnly={isDeliveryNote}
                       onChange={(e) => updateItem(item.id, { unitPrice: Math.max(0, Number(e.target.value) || 0) })}
-                      placeholder="Unit"
+                      placeholder={isDeliveryNote ? "From document" : "Unit"}
                     />
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="col-span-3 sm:col-span-1"
+                      className="col-span-4 sm:col-span-1"
                       onClick={() => removeItem(item.id)}
                       aria-label="Remove line"
                     >
@@ -2200,6 +2532,7 @@ export default function AdminInvoicesPage({
             )) : null}
             </div>
 
+            {docLabels.showTotals ? (
             <div className="space-y-2">
               <button
                 type="button"
@@ -2226,8 +2559,9 @@ export default function AdminInvoicesPage({
             </div>
               ) : null}
             </div>
+            ) : null}
 
-            {!isQuotation ? (
+            {isInvoice ? (
             <div className="space-y-2">
               <button
                 type="button"
@@ -2344,7 +2678,7 @@ export default function AdminInvoicesPage({
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>
-                  Signer label (italic line, e.g. Authorized Signatory)
+                  {isDeliveryNote ? "Dispatched by (name on note)" : "Signer label (italic line, e.g. Authorized Signatory)"}
                 </label>
                 <Input value={signerName} onChange={(e) => setSignerName(e.target.value)} />
               </div>
@@ -2356,24 +2690,25 @@ export default function AdminInvoicesPage({
               ) : null}
             </div>
 
+            {!isDeliveryNote ? (
             <div className="space-y-2">
               <button
                 type="button"
                 className="flex w-full items-center justify-between rounded-md border border-border/70 px-3 py-2 text-left"
                 onClick={() => toggleDetailSection("signatureStamp")}
               >
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">{isQuotation ? "Signature" : "Signature & stamp"}</span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">Signature & stamp</span>
                 <ChevronDown className={cn("h-4 w-4 transition-transform", detailSectionVisible.signatureStamp && "rotate-180")} />
               </button>
               {detailSectionVisible.signatureStamp ? (
                 <>
             <p className={cn("mt-2 text-xs font-semibold uppercase tracking-wide", themeClasses.textNeutralSecondary)}>
-              {isQuotation ? "Digital signature" : "Digital signature & company stamp"}
+              Digital signature & company stamp
             </p>
-            <div className={cn("grid grid-cols-1 gap-3", !isQuotation && "sm:grid-cols-2")}>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="rounded-lg border border-dashed border-border p-2">
                 <p className="mb-1.5 text-xs text-muted-foreground">
-                  {isQuotation ? "Signature (shown in signature area)" : "Digital signature (shown above stamp in signature area)"}
+                  Digital signature (shown above stamp in signature area)
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <input
@@ -2396,7 +2731,6 @@ export default function AdminInvoicesPage({
                   <img src={signatureImage} alt="" className="mt-2 h-16 w-auto max-w-full object-contain" />
                 ) : null}
               </div>
-              {!isQuotation ? (
               <div className="rounded-lg border border-dashed border-border p-2">
                 <p className="mb-1.5 text-xs text-muted-foreground">Company stamp (use PNG with transparent background; shown below signature)</p>
                 <div className="flex flex-wrap gap-2">
@@ -2416,11 +2750,11 @@ export default function AdminInvoicesPage({
                   </div>
                 ) : null}
               </div>
-              ) : null}
             </div>
                 </>
               ) : null}
             </div>
+            ) : null}
 
             <div className="space-y-2">
               <button
@@ -2446,7 +2780,7 @@ export default function AdminInvoicesPage({
         </Card>
         ) : null}
 
-        <Card className={cn("print:shadow-none", isPreviewOnly ? "lg:col-span-12" : "lg:col-span-7", themeClasses.cardBg, themeClasses.cardBorder, "shadow-sm")}>
+        <Card key={savedInvoiceId || "new-invoice"} className={cn("print:shadow-none", isPreviewOnly ? "lg:col-span-12" : "lg:col-span-7", themeClasses.cardBg, themeClasses.cardBorder, "shadow-sm")}>
           <CardHeader className="pb-2">
             <CardTitle className="text-lg">Live preview</CardTitle>
           </CardHeader>
@@ -2502,6 +2836,9 @@ export default function AdminInvoicesPage({
                   {isQuotation && docLabels.subtitle ? (
                     <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">{docLabels.subtitle}</p>
                   ) : null}
+                  {isDeliveryNote && docLabels.subtitle ? (
+                    <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">{docLabels.subtitle}</p>
+                  ) : null}
                 </div>
               </div>
 
@@ -2510,7 +2847,9 @@ export default function AdminInvoicesPage({
                 <div className="h-px w-full" style={{ background: INV.lineGray }} />
                 <div className="absolute left-6 top-0 h-[3px] w-24" style={{ background: INV.blue }} />
                 <p className="pt-1.5 text-right text-[9px] font-semibold normal-case leading-snug tracking-normal text-slate-600 opacity-100 dark:text-slate-400 sm:text-[10px]">
-                  {websiteDisplay}
+                  <a href={websiteHref} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                    {websiteDisplay}
+                  </a>
                 </p>
               </div>
 
@@ -2530,11 +2869,20 @@ export default function AdminInvoicesPage({
                   <p className="text-sm font-extrabold text-slate-900">{docLabels.numberLabel} {invoiceNumber}</p>
                   <p className="mt-1 text-sm text-slate-900">{docLabels.issueDateLabel} {formatLongDate(issueDate)}</p>
                   <p className="mt-0.5 text-xs text-slate-500">{docLabels.dueLabel} {formatLongDate(dueDate)}</p>
+                  {isDeliveryNote && referenceNumber.trim() ? (
+                    <p className="mt-0.5 text-xs text-slate-500">{docLabels.referenceLabel} {referenceNumber.trim()}</p>
+                  ) : null}
                 </div>
               </div>
 
               {!hasProjectTables ? (
-                <div className="mt-5 overflow-x-auto border border-slate-300">
+                <div className="mt-5 px-6">
+                  {itemsTableTitle.trim() ? (
+                    <p className="mb-2 text-[11px] font-extrabold uppercase leading-relaxed tracking-[0.06em] text-slate-900">
+                      {itemsTableTitle.trim()}
+                    </p>
+                  ) : null}
+                <div className="overflow-x-auto border border-slate-300">
                   <table className="w-full table-fixed border-collapse">
                     <colgroup>
                       <col style={{ width: columnWidthForKey("sn") }} />
@@ -2542,6 +2890,7 @@ export default function AdminInvoicesPage({
                       <col style={{ width: columnWidthForKey("qty") }} />
                       <col style={{ width: columnWidthForKey("unitPrice") }} />
                       <col style={{ width: columnWidthForKey("totalPrice") }} />
+                      {docLabels.showMarkColumn ? <col style={{ width: columnWidthForKey("mark") }} /> : null}
                     </colgroup>
                     <thead>
                       <tr style={{ background: INV.blue }}>
@@ -2549,7 +2898,7 @@ export default function AdminInvoicesPage({
                           NO
                         </th>
                         <th className="border border-blue-700 px-2.5 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.08em] text-white sm:px-3.5">
-                          DESCRIPTION
+                          {isDeliveryNote ? "ITEM / DESCRIPTION" : "DESCRIPTION"}
                         </th>
                         <th className="border border-blue-700 px-2.5 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.08em] text-white sm:px-3.5">
                           QTY
@@ -2560,6 +2909,11 @@ export default function AdminInvoicesPage({
                         <th className="border border-blue-700 px-2.5 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.08em] text-white sm:px-3.5">
                           TOTAL ({currency})
                         </th>
+                        {docLabels.showMarkColumn ? (
+                          <th className="border border-blue-700 px-2.5 py-2.5 text-center text-[10px] font-bold uppercase tracking-[0.08em] text-white sm:px-3.5">
+                            MARK
+                          </th>
+                        ) : null}
                       </tr>
                     </thead>
                     <tbody>
@@ -2583,29 +2937,39 @@ export default function AdminInvoicesPage({
                             <td className="border border-slate-200 px-2.5 py-2.5 text-right text-sm font-semibold tabular-nums text-slate-900 sm:px-3.5">
                               {money(rowTotal)}
                             </td>
+                            {docLabels.showMarkColumn ? (
+                              <td className="border border-slate-200 px-2.5 py-2.5 text-center sm:px-3.5">
+                                <span
+                                  className="inline-flex h-3.5 w-3.5 border border-slate-600"
+                                  aria-hidden
+                                />
+                              </td>
+                            ) : null}
                           </tr>
                         )
                       })}
                     </tbody>
                   </table>
                 </div>
+                </div>
               ) : null}
 
               {visibleProjectSections(projectTables?.sections).map((section) => {
                 const prototypeSection = isPrototypeSectionTitle(section.title)
+                const previewCols = isDeliveryNote ? deliveryNoteColumns(section.columns) : section.columns
                 return (
                 <div key={section.title} className="mt-2 px-6">
                   <p className="mb-1.5 text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-900">{section.title}</p>
                   <div className="overflow-x-auto border border-slate-300">
                     <table className="min-w-full table-fixed border-collapse">
                       <colgroup>
-                        {section.columns.map((col) => (
+                        {previewCols.map((col) => (
                           <col key={`${section.title}-${col.key}-w`} style={{ width: columnWidthForKey(col.key) }} />
                         ))}
                       </colgroup>
                       <thead>
                         <tr style={{ background: INV.blue }}>
-                          {section.columns.map((col) => (
+                          {previewCols.map((col) => (
                             <th
                               key={col.key}
                               className={cn(
@@ -2621,7 +2985,7 @@ export default function AdminInvoicesPage({
                       <tbody>
                         {section.rows.map((row, index) => (
                           <tr key={`${section.title}-${index}`} style={{ background: index % 2 === 1 ? INV.rowStripe : "#fff" }}>
-                            {section.columns.map((col) => (
+                            {previewCols.map((col) => (
                               <td
                                 key={`${section.title}-${index}-${col.key}`}
                                 className={cn(
@@ -2630,13 +2994,17 @@ export default function AdminInvoicesPage({
                                   col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"
                                 )}
                               >
-                                {displayProjectTableCell(row, col, index, currency)}
+                                {col.key === "mark" ? (
+                                  <span className="inline-flex h-3.5 w-3.5 border border-slate-600" />
+                                ) : (
+                                  displayProjectTableCell(row, col, index, currency)
+                                )}
                               </td>
                             ))}
                           </tr>
                         ))}
                         <tr>
-                          <td colSpan={Math.max(1, section.columns.length - 1)} className="border border-slate-200 px-3 py-1.5 text-right text-xs font-extrabold text-slate-900">
+                          <td colSpan={Math.max(1, previewCols.length - 1)} className="border border-slate-200 px-3 py-1.5 text-right text-xs font-extrabold text-slate-900">
                             SUBTOTAL
                           </td>
                           <td className="border border-slate-200 px-3 py-1.5 text-right text-xs font-extrabold tabular-nums text-slate-900">
@@ -2650,6 +3018,14 @@ export default function AdminInvoicesPage({
                 )
               })}
 
+              {isDeliveryNote && backorderedNote.trim() ? (
+                <div className="mt-3 px-6">
+                  <p className="mb-1 text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-900">Missing / backordered items</p>
+                  <p className="whitespace-pre-line text-xs text-slate-600">{backorderedNote.trim()}</p>
+                </div>
+              ) : null}
+
+              {docLabels.showTotals ? (
               <div className="mt-0 flex flex-col gap-4 border-t border-slate-200 bg-white px-6 pb-2 pt-5">
                 <div className="ml-auto w-full max-w-[240px]">
                   <div className="flex justify-between text-xs text-slate-600">
@@ -2675,6 +3051,7 @@ export default function AdminInvoicesPage({
                   </div>
                 </div>
               </div>
+              ) : null}
 
               {showPaymentScheduleTable && paymentScheduleDisplay.length ? (
                 <div className="mt-2 px-6">
@@ -2780,6 +3157,10 @@ export default function AdminInvoicesPage({
                   />
                 </div>
                 <div className="w-full max-w-[280px] text-left sm:ml-auto sm:text-right">
+                  {isDeliveryNote ? (
+                    <p className="text-xs text-slate-600">Dispatched by: <span className="font-semibold text-slate-900">{signerName}</span></p>
+                  ) : (
+                  <>
                   <p
                     className="font-['Georgia',serif] text-lg italic text-slate-700"
                   >
@@ -2791,18 +3172,33 @@ export default function AdminInvoicesPage({
                     </div>
                   ) : null}
                   <p className="mt-2 text-xs text-slate-500">{signerTitle}</p>
-                  {!isQuotation && stampImage ? (
+                  {stampImage ? (
                     <img
                       src={stampImage}
                       alt=""
                       className="ml-auto mt-2 block h-36 w-auto max-w-[280px] object-contain opacity-95"
                     />
                   ) : null}
+                  </>
+                  )}
                   {isQuotation ? (
                     <div className="mt-4 border-t border-dashed border-slate-300 pt-3 text-right">
                       <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-700">{docLabels.acceptanceHeading}</p>
                       <p className="mt-3 text-[10px] text-slate-500">Signature</p>
                       <div className="ml-auto mt-1 h-6 max-w-[220px] border-b border-slate-400" />
+                    </div>
+                  ) : null}
+                  {isDeliveryNote ? (
+                    <div className="mt-4 border-t border-dashed border-slate-300 pt-3 text-right">
+                      <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-700">{docLabels.acceptanceHeading}</p>
+                      <p className="mt-3 text-[10px] text-slate-500">Received by (print name)</p>
+                      <div className="ml-auto mt-1 h-6 max-w-[220px] border-b border-slate-400" />
+                      <p className="mt-3 text-[10px] text-slate-500">Signature</p>
+                      <div className="ml-auto mt-1 h-6 max-w-[220px] border-b border-slate-400" />
+                      <p className="mt-3 text-[10px] text-slate-500">Date received</p>
+                      <div className="ml-auto mt-1 h-6 max-w-[220px] border-b border-slate-400" />
+                      <p className="mt-3 text-[10px] text-slate-500">Comments (missing / damaged)</p>
+                      <div className="ml-auto mt-1 h-10 max-w-[220px] border-b border-slate-400" />
                     </div>
                   ) : null}
                 </div>

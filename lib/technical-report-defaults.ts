@@ -2,7 +2,7 @@ export type ReportSection = {
   id: string
   title: string
   body: string
-  /** Plain-text status line under the title (no colored badges) */
+  /** Status line under the title (shown bold dark blue — not a colored badge) */
   status?: string
 }
 
@@ -26,6 +26,8 @@ export type TechnicalReportDefaults = {
   serialNumber: string
   application: string
   subject: string
+  /** Client-reported problem (TSP header field — not repeated as a body section) */
+  problemDescription: string
   /** Single closing note: proforma attachment + approval (not repeated in body sections) */
   closureNote: string
   preparedByName: string
@@ -51,10 +53,12 @@ export const TSP_XRAY_PSU_REPORT: TechnicalReportDefaults = {
   footerEmail: "support@honiccompany.com",
   footerAddress: "Dar es Salaam, Tanzania",
   reportDate: "2026-07-22",
-  machineName: "YXLON ANDREX SMART 583 (XRS)",
+  machineName: "ANDREX SMART 583",
   serialNumber: "81226",
-  application: "Non-Medical / Non-Destructive Testing (NDT) — spiral steel pipes",
+  application: "Non-Medical / Non-Destructive Testing (NDT) (testing spiral steel pipes)",
   subject: "XRS Power Supply Failure – YXLON ANDREX SMART 583",
+  problemDescription:
+    "The X-ray inspection system fails to start. The ANDREX SMART display and XRS Controller monitor remain blank during startup.",
   closureNote:
     "Enclosure: A separate proforma invoice is attached with required parts, quantities, and costs.\n\nTo proceed with repair we require:\n1. Formal approval of this report and the recommended repair strategy.\n2. Approval of the procurement budget on the attached proforma invoice.",
   preparedByName: "Authorized Signatory",
@@ -68,45 +72,38 @@ export const TSP_XRAY_PSU_REPORT: TechnicalReportDefaults = {
     },
     {
       id: "sec-2",
-      title: "2. Problem Description",
-      body:
-        "The X-ray inspection system fails to start. The ANDREX SMART display and XRS Controller monitor remain blank during startup.",
+      title: "2. Diagnostic Findings",
+      body: "Findings are organised by power stage of the XRS power supply system.",
     },
     {
-      id: "sec-3a",
-      title: "3. Diagnostic Findings",
-      body:
-        "Findings are organised by power stage of the XRS power supply system.",
-    },
-    {
-      id: "sec-3b",
-      title: "3.1 Stage 1 — 5V (7A) External Power Supply",
+      id: "sec-2a",
+      title: "2.1 Stage 1 — 5V (7A) External Power Supply",
       status: "Status: Completely dead / unstable",
       body:
         "This is a separate power box mounted inside the main unit. Troubleshooting restored temporary power, but the supply does not remain operational. It runs for only a few minutes, then shuts down completely. The module is unreliable and not fit for continued service.",
     },
     {
-      id: "sec-3c",
-      title: "3.2 Stage 2 — 24V (5A) Main Power Supply",
+      id: "sec-2b",
+      title: "2.2 Stage 2 — 24V (5A) Main Power Supply",
       status: "Status: Working within specification",
       body: "Voltage measurements are stable and within normal limits.",
     },
     {
-      id: "sec-3d",
-      title: "3.3 Stage 3 — 27V Booster & 15V Buck Circuits",
+      id: "sec-2c",
+      title: "2.3 Stage 3 — 27V Booster & 15V Buck Circuits",
       status: "Status: Failed — repairable at component level",
       body:
         "These two circuits are built onto the 24V power board. Both the 27V booster and the 15V buck have failed. The main board substrate remains serviceable; failed discrete components can be replaced with new parts to restore this section.",
     },
     {
-      id: "sec-4",
-      title: "4. Recommendations & Action Plan",
+      id: "sec-3",
+      title: "3. Recommendations & Action Plan",
       body:
-        "5V PSU: Replace the 5V external module with a new unit. Repair of the failed module is not recommended for long-term reliability.\n\n27V / 15V circuits: Repair by replacing the failed electronic components on the board. This returns that section to normal operating condition when completed and tested.",
+        "**5V PSU:** Replace the 5V external module with a new unit. Repair of the failed module is not recommended for long-term reliability.\n\n**27V / 15V circuits:** Repair by replacing the failed electronic components on the board. This returns that section to normal operating condition when completed and tested.",
     },
     {
-      id: "sec-5",
-      title: "5. Sourcing & Timeline",
+      id: "sec-4",
+      title: "4. Sourcing & Timeline",
       body:
         "Most required repair components and the replacement 5V supply are not available locally and must be imported from international suppliers.\n\nImport lead time will add working days after approval. Ordering will start immediately upon confirmation to proceed.",
     },
@@ -118,3 +115,6 @@ export const PSU_DIAGNOSTIC_REPORT = TSP_XRAY_PSU_REPORT
 
 export const STAMP_PUBLIC_URL =
   "https://qobobocldfjhdkpjyuuq.supabase.co/storage/v1/object/public/invoice-assets/invoices/admin/stamp/company-stamp.jpg"
+
+export const SIGNATURE_PUBLIC_URL =
+  "https://qobobocldfjhdkpjyuuq.supabase.co/storage/v1/object/public/invoice-assets/invoices/admin/signature/prepared-by-signature-white-v2.png"

@@ -1,6 +1,15 @@
 "use client"
 
-import { Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react"
+import {
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { ArrowLeft, FileDown, ImagePlus, Plus, Printer, RotateCcw, Trash2 } from "lucide-react"
@@ -14,6 +23,7 @@ import { useToast } from "@/hooks/use-toast"
 import {
   TSP_XRAY_PSU_REPORT,
   STAMP_PUBLIC_URL,
+  SIGNATURE_PUBLIC_URL,
   type ReportSection,
   type TechnicalReportDefaults,
 } from "@/lib/technical-report-defaults"
@@ -35,6 +45,49 @@ function escapeHtml(value: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
+}
+
+/** Convert **bold** and *italic* markers to HTML (after escaping). */
+function convertInlineMarkupToHtml(text: string): string {
+  return escapeHtml(text)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+}
+
+/** Convert **bold** and *italic* markers to React nodes for live preview. */
+function renderInlineMarkup(text: string): ReactNode {
+  if (!text) return "—"
+  const nodes: ReactNode[] = []
+  const re = /(\*\*(.+?)\*\*|\*(.+?)\*)/g
+  let last = 0
+  let match: RegExpExecArray | null
+  let key = 0
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > last) nodes.push(text.slice(last, match.index))
+    if (match[2] != null) {
+      nodes.push(<strong key={`b-${key++}`}>{match[2]}</strong>)
+    } else if (match[3] != null) {
+      nodes.push(<em key={`i-${key++}`}>{match[3]}</em>)
+    }
+    last = match.index + match[0].length
+  }
+  if (last < text.length) nodes.push(text.slice(last))
+  return nodes.length ? nodes : text
+}
+
+function wrapSelectionMarkup(
+  value: string,
+  start: number,
+  end: number,
+  marker: "**" | "*",
+  emptyLabel: string
+): { next: string; caretStart: number; caretEnd: number } {
+  const selected = value.slice(start, end)
+  const wrapped = `${marker}${selected || emptyLabel}${marker}`
+  const next = `${value.slice(0, start)}${wrapped}${value.slice(end)}`
+  const caretStart = start + marker.length
+  const caretEnd = start + wrapped.length - marker.length
+  return { next, caretStart, caretEnd }
 }
 
 function formatLongDate(iso: string): string {
@@ -98,13 +151,14 @@ function TechnicalReportsStudio() {
   const [serialNumber, setSerialNumber] = useState(defaults.serialNumber)
   const [application, setApplication] = useState(defaults.application)
   const [subject, setSubject] = useState(defaults.subject)
+  const [problemDescription, setProblemDescription] = useState(defaults.problemDescription)
   const [closureNote, setClosureNote] = useState(defaults.closureNote)
   const [preparedByName, setPreparedByName] = useState(defaults.preparedByName)
   const [preparedByTitle, setPreparedByTitle] = useState(defaults.preparedByTitle)
   const [sections, setSections] = useState<ReportSection[]>(defaults.sections)
   const [invoiceLogo, setInvoiceLogo] = useState("")
   const [stampImage, setStampImage] = useState(STAMP_PUBLIC_URL)
-  const [signatureImage, setSignatureImage] = useState("")
+  const [signatureImage, setSignatureImage] = useState(SIGNATURE_PUBLIC_URL)
   const [isSaving, setIsSaving] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
 
@@ -162,15 +216,29 @@ function TechnicalReportsStudio() {
         setSerialNumber(String(p.serialNumber || ""))
         setApplication(String(p.application || ""))
         setSubject(String(p.subject || ""))
+        const problemFromLegacySection = Array.isArray(p.sections)
+          ? p.sections.find((s: any) => String(s.title || "").toLowerCase().includes("problem description"))
+          : null
+        setProblemDescription(
+          String(
+            p.problemDescription ||
+              problemFromLegacySection?.body ||
+              defaults.problemDescription
+          )
+        )
         const legacyClosure = [p.attachmentNote, p.nextSteps].filter(Boolean).join("\n\n")
         setClosureNote(String(p.closureNote || legacyClosure || defaults.closureNote))
         setPreparedByName(String(p.preparedByName || p.signerName || defaults.preparedByName))
         setPreparedByTitle(String(p.preparedByTitle || p.signerTitle || defaults.preparedByTitle))
         if (Array.isArray(p.sections) && p.sections.length) {
-          // Drop duplicated closing sections if older drafts still contain them
+          // Drop duplicated closing / problem sections if older drafts still contain them
           const filtered = p.sections.filter((s: any) => {
             const t = String(s.title || "").toLowerCase()
-            return !t.includes("commercial attachment") && !t.includes("next steps")
+            return (
+              !t.includes("commercial attachment") &&
+              !t.includes("next steps") &&
+              !t.includes("problem description")
+            )
           })
           setSections(
             (filtered.length ? filtered : p.sections).map((s: any, i: number) => ({
@@ -263,6 +331,28 @@ function TechnicalReportsStudio() {
   const addSection = () => setSections((prev) => [...prev, newSection(prev.length + 1)])
   const removeSection = (id: string) => setSections((prev) => (prev.length > 1 ? prev.filter((s) => s.id !== id) : prev))
 
+  const applyMarkupShortcut = (
+    e: KeyboardEvent<HTMLTextAreaElement>,
+    value: string,
+    onChange: (next: string) => void
+  ) => {
+    if (!(e.ctrlKey || e.metaKey)) return
+    const key = e.key.toLowerCase()
+    if (key !== "b" && key !== "i") return
+    e.preventDefault()
+    const el = e.currentTarget
+    const start = el.selectionStart ?? 0
+    const end = el.selectionEnd ?? 0
+    const marker = key === "b" ? "**" : "*"
+    const emptyLabel = key === "b" ? "bold text" : "italic text"
+    const { next, caretStart, caretEnd } = wrapSelectionMarkup(value, start, end, marker, emptyLabel)
+    onChange(next)
+    requestAnimationFrame(() => {
+      el.focus()
+      el.setSelectionRange(caretStart, caretEnd)
+    })
+  }
+
   const buildPayload = () => ({
     documentKind: "technical_report",
     dashboardScope: "main",
@@ -290,6 +380,7 @@ function TechnicalReportsStudio() {
     serialNumber,
     application,
     subject,
+    problemDescription,
     closureNote,
     preparedByName,
     preparedByTitle,
@@ -352,7 +443,7 @@ function TechnicalReportsStudio() {
       sections
         .map((sec) => {
           const statusHtml = sec.status?.trim()
-            ? `<p style="margin:0 0 6px;font-size:11px;font-style:italic;color:#475569;">${escapeHtml(sec.status.trim())}</p>`
+            ? `<p style="margin:0 0 6px;font-size:11px;font-weight:700;color:${INV.blue};">${escapeHtml(sec.status.trim())}</p>`
             : ""
           return `
             <section style="margin:0 0 16px;padding-bottom:14px;border-bottom:1px solid #e2e8f0;">
@@ -360,7 +451,7 @@ function TechnicalReportsStudio() {
                 ${escapeHtml(sec.title)}
               </h3>
               ${statusHtml}
-              <p style="margin:0;font-size:12px;line-height:1.7;color:#334155;white-space:pre-line;">${escapeHtml(sec.body || "—")}</p>
+              <p style="margin:0;font-size:12px;line-height:1.7;color:#334155;white-space:pre-line;">${convertInlineMarkupToHtml(sec.body || "—")}</p>
             </section>`
         })
         .join(""),
@@ -398,6 +489,9 @@ function TechnicalReportsStudio() {
         .subject { margin:14px 0 6px; padding:10px 12px; border:1px solid #cbd5e1; background:#fff; }
         .subject .k { font-size:9px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#64748b; }
         .subject .v { margin-top:4px; font-size:13px; font-weight:700; color:#0f172a; }
+        .problem { margin:8px 0 6px; padding:10px 12px; border:1px solid #cbd5e1; background:#fff; }
+        .problem .k { font-size:9px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#64748b; }
+        .problem .v { margin-top:4px; font-size:12px; line-height:1.65; color:#334155; white-space:pre-line; }
         .body-title { margin:18px 0 12px; font-size:13px; font-weight:900; letter-spacing:0.06em; text-transform:uppercase; color:#0f172a; border-bottom:2px solid ${INV.blue}; padding-bottom:6px; }
         .closure { margin-top:8px; border:1px solid #cbd5e1; }
         .closure-h { background:#184a96; color:#fff; font-size:10px; font-weight:800; letter-spacing:0.1em; text-transform:uppercase; padding:8px 12px; }
@@ -441,11 +535,15 @@ function TechnicalReportsStudio() {
           <div class="k">Subject</div>
           <div class="v">${escapeHtml(subject || "—")}</div>
         </div>
+        <div class="problem">
+          <div class="k">Problem Description</div>
+          <div class="v">${convertInlineMarkupToHtml(problemDescription || "—")}</div>
+        </div>
         <div class="body-title">${escapeHtml(reportTitle)}</div>
         ${sectionsHtml}
         <div class="closure">
           <div class="closure-h">Document closure — attachment &amp; approval</div>
-          <div class="closure-b">${escapeHtml(closureNote)}</div>
+          <div class="closure-b">${convertInlineMarkupToHtml(closureNote)}</div>
         </div>
         <div class="sign">
           <div class="box">
@@ -499,11 +597,14 @@ function TechnicalReportsStudio() {
     setToName(d.toName)
     setToAddress(d.toAddress)
     setSubject(d.subject)
+    setProblemDescription(d.problemDescription)
     setMachineName(d.machineName)
     setSerialNumber(d.serialNumber)
     setApplication(d.application)
     setClosureNote(d.closureNote)
     setSections(d.sections.map((s) => ({ ...s, id: `${s.id}-${Date.now()}` })))
+    setSignatureImage(SIGNATURE_PUBLIC_URL)
+    setStampImage(STAMP_PUBLIC_URL)
     toast({ title: "Template loaded", description: "TSP X-ray PSU diagnostic report applied." })
   }
 
@@ -578,8 +679,19 @@ function TechnicalReportsStudio() {
                 <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
               </div>
               <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Problem description (as reported by TSP)
+                </label>
+                <Textarea
+                  value={problemDescription}
+                  onChange={(e) => setProblemDescription(e.target.value)}
+                  onKeyDown={(e) => applyMarkupShortcut(e, problemDescription, setProblemDescription)}
+                  rows={3}
+                />
+              </div>
+              <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">Inspection system</label>
-                <Input value={machineName} onChange={(e) => setMachineName(e.target.value)} placeholder="e.g. YXLON ANDREX SMART 583" />
+                <Input value={machineName} onChange={(e) => setMachineName(e.target.value)} placeholder="e.g. ANDREX SMART 583" />
               </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
@@ -624,7 +736,7 @@ function TechnicalReportsStudio() {
                   </Button>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Do not add “Next steps” or “Attachment” sections here — use Document closure below once.
+                  Use Ctrl+B for bold, Ctrl+I for italic in section body. Problem description sits above — do not repeat it here. Use Document closure once for attachment / approval.
                 </p>
                 {sections.map((sec) => (
                   <div key={sec.id} className="space-y-2 rounded-lg border border-border/80 bg-muted/20 p-2">
@@ -647,8 +759,11 @@ function TechnicalReportsStudio() {
                     <Textarea
                       value={sec.body}
                       onChange={(e) => updateSection(sec.id, { body: e.target.value })}
+                      onKeyDown={(e) =>
+                        applyMarkupShortcut(e, sec.body, (next) => updateSection(sec.id, { body: next }))
+                      }
                       rows={4}
-                      placeholder="Section body"
+                      placeholder="Section body (Ctrl+B bold, Ctrl+I italic)"
                     />
                   </div>
                 ))}
@@ -658,7 +773,12 @@ function TechnicalReportsStudio() {
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">
                   Document closure (attachment + approval — single block)
                 </label>
-                <Textarea value={closureNote} onChange={(e) => setClosureNote(e.target.value)} rows={5} />
+                <Textarea
+                  value={closureNote}
+                  onChange={(e) => setClosureNote(e.target.value)}
+                  onKeyDown={(e) => applyMarkupShortcut(e, closureNote, setClosureNote)}
+                  rows={5}
+                />
               </div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -814,6 +934,15 @@ function TechnicalReportsStudio() {
                   <p className="mt-1 text-sm font-bold text-slate-900">{subject || "—"}</p>
                 </div>
 
+                <div className="mt-2 border border-slate-300 px-3 py-2.5">
+                  <p className="text-[9px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
+                    Problem Description
+                  </p>
+                  <p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-slate-700">
+                    {renderInlineMarkup(problemDescription || "—")}
+                  </p>
+                </div>
+
                 <h2
                   className="mt-5 border-b-2 pb-1.5 text-[12px] font-black uppercase tracking-[0.06em] text-slate-900"
                   style={{ borderColor: INV.blue }}
@@ -826,9 +955,13 @@ function TechnicalReportsStudio() {
                     <section key={sec.id} className="border-b border-slate-200 py-3.5 last:border-b-0">
                       <h3 className="text-[11px] font-extrabold uppercase tracking-[0.04em] text-slate-900">{sec.title}</h3>
                       {sec.status?.trim() ? (
-                        <p className="mt-1 text-[11px] italic text-slate-600">{sec.status.trim()}</p>
+                        <p className="mt-1 text-[11px] font-bold" style={{ color: INV.blue }}>
+                          {sec.status.trim()}
+                        </p>
                       ) : null}
-                      <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-slate-600">{sec.body || "—"}</p>
+                      <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-slate-600">
+                        {renderInlineMarkup(sec.body || "—")}
+                      </p>
                     </section>
                   ))}
                 </div>
@@ -837,7 +970,9 @@ function TechnicalReportsStudio() {
                   <div className="px-3 py-2 text-[10px] font-extrabold uppercase tracking-[0.1em] text-white" style={{ background: INV.blue }}>
                     Document closure — attachment &amp; approval
                   </div>
-                  <p className="whitespace-pre-line px-3 py-3 text-xs leading-relaxed text-slate-600">{closureNote}</p>
+                  <p className="whitespace-pre-line px-3 py-3 text-xs leading-relaxed text-slate-600">
+                    {renderInlineMarkup(closureNote)}
+                  </p>
                 </div>
 
                 <div className="mt-8 grid grid-cols-1 gap-8 sm:grid-cols-2">

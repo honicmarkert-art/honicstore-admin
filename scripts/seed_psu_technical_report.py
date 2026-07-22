@@ -11,6 +11,11 @@ STAMP_PUBLIC_URL = (
     "invoice-assets/invoices/admin/stamp/company-stamp.jpg"
 )
 
+PROBLEM_DESCRIPTION = (
+    "The X-ray inspection system fails to start. "
+    "The ANDREX SMART display and XRS Controller monitor remain blank during startup."
+)
+
 SECTIONS = [
     {
         "id": "sec-1",
@@ -25,21 +30,13 @@ SECTIONS = [
     },
     {
         "id": "sec-2",
-        "title": "2. Problem Description",
-        "status": "",
-        "body": (
-            "The X-ray inspection system fails to start. The ANDREX SMART display and XRS Controller monitor remain blank during startup."
-        ),
-    },
-    {
-        "id": "sec-3a",
-        "title": "3. Diagnostic Findings",
+        "title": "2. Diagnostic Findings",
         "status": "",
         "body": "Findings are organised by power stage of the XRS power supply system.",
     },
     {
-        "id": "sec-3b",
-        "title": "3.1 Stage 1 — 5V (7A) External Power Supply",
+        "id": "sec-2a",
+        "title": "2.1 Stage 1 — 5V (7A) External Power Supply",
         "status": "Status: Completely dead / unstable",
         "body": (
             "This is a separate power box mounted inside the main unit. Troubleshooting restored temporary power, "
@@ -48,14 +45,14 @@ SECTIONS = [
         ),
     },
     {
-        "id": "sec-3c",
-        "title": "3.2 Stage 2 — 24V (5A) Main Power Supply",
+        "id": "sec-2b",
+        "title": "2.2 Stage 2 — 24V (5A) Main Power Supply",
         "status": "Status: Working within specification",
         "body": "Voltage measurements are stable and within normal limits.",
     },
     {
-        "id": "sec-3d",
-        "title": "3.3 Stage 3 — 27V Booster & 15V Buck Circuits",
+        "id": "sec-2c",
+        "title": "2.3 Stage 3 — 27V Booster & 15V Buck Circuits",
         "status": "Status: Failed — repairable at component level",
         "body": (
             "These two circuits are built onto the 24V power board. Both the 27V booster and the 15V buck have failed. "
@@ -63,18 +60,18 @@ SECTIONS = [
         ),
     },
     {
-        "id": "sec-4",
-        "title": "4. Recommendations & Action Plan",
+        "id": "sec-3",
+        "title": "3. Recommendations & Action Plan",
         "status": "",
         "body": (
-            "5V PSU: Replace the 5V external module with a new unit. Repair of the failed module is not recommended for long-term reliability.\n\n"
-            "27V / 15V circuits: Repair by replacing the failed electronic components on the board. "
+            "**5V PSU:** Replace the 5V external module with a new unit. Repair of the failed module is not recommended for long-term reliability.\n\n"
+            "**27V / 15V circuits:** Repair by replacing the failed electronic components on the board. "
             "This returns that section to normal operating condition when completed and tested."
         ),
     },
     {
-        "id": "sec-5",
-        "title": "5. Sourcing & Timeline",
+        "id": "sec-4",
+        "title": "4. Sourcing & Timeline",
         "status": "",
         "body": (
             "Most required repair components and the replacement 5V supply are not available locally and must be imported from international suppliers.\n\n"
@@ -172,10 +169,11 @@ def main():
         "footerAddress": "Dar es Salaam, Tanzania",
         "issueDate": "2026-07-22",
         "reportDate": "2026-07-22",
-        "machineName": "YXLON ANDREX SMART 583 (XRS)",
+        "machineName": "ANDREX SMART 583",
         "serialNumber": "81226",
-        "application": "Non-Medical / Non-Destructive Testing (NDT) — spiral steel pipes",
+        "application": "Non-Medical / Non-Destructive Testing (NDT) (testing spiral steel pipes)",
         "subject": "XRS Power Supply Failure – YXLON ANDREX SMART 583",
+        "problemDescription": PROBLEM_DESCRIPTION,
         "closureNote": (
             "Enclosure: A separate proforma invoice is attached with required parts, quantities, and costs.\n\n"
             "To proceed with repair we require:\n"
@@ -189,7 +187,10 @@ def main():
         "sections": SECTIONS,
         "stampImage": STAMP_PUBLIC_URL,
         "invoiceLogo": "",
-        "signatureImage": "",
+        "signatureImage": (
+            "https://qobobocldfjhdkpjyuuq.supabase.co/storage/v1/object/public/"
+            "invoice-assets/invoices/admin/signature/prepared-by-signature-white-v2.png"
+        ),
         "currency": "TZS",
         "totals": {"subtotal": 0, "taxAmount": 0, "grandTotal": 0},
     }
@@ -236,7 +237,7 @@ def main():
                 "id": first.get("id", rid),
                 "report_number": REPORT_NUMBER,
                 "client": "Tanzania Steel Pipes Limited",
-                "machine": "YXLON ANDREX SMART 583 (XRS)",
+                "machine": "ANDREX SMART 583",
                 "edit_url": f"/dashboard/technical-reports?invoiceId={first.get('id', rid)}&mode=edit",
             },
             indent=2,
