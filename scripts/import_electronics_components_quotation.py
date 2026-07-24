@@ -1,4 +1,4 @@
-"""Import Electronics components.xlsx as a components-only quotation into Supabase invoices table."""
+3w`"""Import Electronics components.xlsx as a components-only quotation into Supabase invoices table."""
 import json
 import os
 import re

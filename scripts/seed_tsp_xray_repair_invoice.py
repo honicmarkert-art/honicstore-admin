@@ -44,34 +44,89 @@ def money(n: float | int) -> str:
     return f"{float(n):,.2f}"
 
 
+# Option 2 — Local troubleshooting
+# Target after discount: TZS 4,234,500
+DISCOUNT = 100000
+TARGET_AFTER_DISCOUNT = 4234500
+TARGET_SUBTOTAL = TARGET_AFTER_DISCOUNT + DISCOUNT  # 4,334,500
+
 COMPONENT_ROWS = [
     {
         "sn": "1",
-        "item": "5V / 7A PSU (SunPower SPS-035-05 / Mean Well LRS-35-5 or equiv.)",
+        "item": "Buck and Boost converter — Boost XL6009",
         "qty": "1",
-        "unitPrice": money(110400),
-        "totalPrice": money(110400),
+        "unitPrice": money(55000),
+        "totalPrice": money(55000),
     },
     {
         "sn": "2",
-        "item": "Regulator LM2577",
-        "qty": "1",
-        "unitPrice": money(12000),
-        "totalPrice": money(12000),
+        "item": "Buck converter components",
+        "qty": "5",
+        "unitPrice": money(12900),
+        "totalPrice": money(64500),
     },
     {
         "sn": "3",
-        "item": "Regulator LM2576",
-        "qty": "2",
-        "unitPrice": money(12000),
-        "totalPrice": money(24000),
+        "item": "Boost converter components",
+        "qty": "5",
+        "unitPrice": money(12900),
+        "totalPrice": money(64500),
     },
     {
         "sn": "4",
-        "item": "Schottky diode 1N5821",
+        "item": "Electrolytic capacitor kit — rail filter / decoupling",
+        "qty": "1",
+        "unitPrice": money(120000),
+        "totalPrice": money(120000),
+    },
+    {
+        "sn": "5",
+        "item": "Ceramic / MLCC filter capacitor kit",
+        "qty": "1",
+        "unitPrice": money(55000),
+        "totalPrice": money(55000),
+    },
+    {
+        "sn": "6",
+        "item": "Fast-blow fuse kit (5V / 24V / 27V rails)",
+        "qty": "1",
+        "unitPrice": money(35000),
+        "totalPrice": money(35000),
+    },
+    {
+        "sn": "7",
+        "item": "MOSFET / switching devices (booster stage)",
         "qty": "2",
-        "unitPrice": money(2500),
-        "totalPrice": money(5000),
+        "unitPrice": money(55000),
+        "totalPrice": money(110000),
+    },
+    {
+        "sn": "8",
+        "item": "Thermal pads & insulating kit",
+        "qty": "1",
+        "unitPrice": money(45000),
+        "totalPrice": money(45000),
+    },
+    {
+        "sn": "9",
+        "item": "Wire terminals & connector kit",
+        "qty": "1",
+        "unitPrice": money(65000),
+        "totalPrice": money(65000),
+    },
+    {
+        "sn": "10",
+        "item": "Flux / solder consumables for board-level repair",
+        "qty": "1",
+        "unitPrice": money(48000),
+        "totalPrice": money(48000),
+    },
+    {
+        "sn": "11",
+        "item": "Test leads / jumper kit for rail probing",
+        "qty": "1",
+        "unitPrice": money(42000),
+        "totalPrice": money(42000),
     },
 ]
 
@@ -80,13 +135,31 @@ SERVICE_ROWS = [
         "sn": "1",
         "item": "Technical diagnostics & inspection (Ukaguzi) — fixed, non-refundable",
         "qty": "1",
-        "amount": money(300000),
+        "amount": money(750000),
     },
     {
         "sn": "2",
-        "item": "Electronic repair labour — PSU replacement, 27V/15V repair, testing",
+        "item": "Local advanced troubleshooting — multi-rail isolation, load & startup tests",
         "qty": "1",
-        "amount": money(800000),
+        "amount": money(1200000),
+    },
+    {
+        "sn": "3",
+        "item": "Component-level repair labour (local) — 27V/15V and related stages",
+        "qty": "1",
+        "amount": money(1100000),
+    },
+    {
+        "sn": "4",
+        "item": "System testing, verification & return-to-service checks",
+        "qty": "1",
+        "amount": money(400000),
+    },
+    {
+        "sn": "5",
+        "item": "6-month warranty — follow-up visit & inspection cover",
+        "qty": "1",
+        "amount": money(180500),
     },
 ]
 
@@ -161,12 +234,17 @@ def main():
 
     parts_total = sum(parse_money(r["totalPrice"]) for r in COMPONENT_ROWS)
     service_total = sum(parse_money(r["amount"]) * parse_money(r["qty"]) for r in SERVICE_ROWS)
-    grand_total = parts_total + service_total
+    subtotal = parts_total + service_total
+    if abs(subtotal - TARGET_SUBTOTAL) > 0.5:
+        raise SystemExit(f"Subtotal must be {TARGET_SUBTOTAL:,.0f} (got {subtotal:,.0f})")
+    grand_total = max(0, subtotal - DISCOUNT)
+    if abs(grand_total - TARGET_AFTER_DISCOUNT) > 0.5:
+        raise SystemExit(f"Grand total must be {TARGET_AFTER_DISCOUNT:,.0f} (got {grand_total:,.0f})")
 
     # Components first, then service — professional repair invoice order
     sections = [
         {
-            "title": "1. COMPONENTS & SPARE PARTS",
+            "title": "1. COMPONENTS & MATERIALS (LOCAL TROUBLESHOOTING)",
             "columns": [
                 {"key": "sn", "label": "S/N", "align": "center"},
                 {"key": "item", "label": "Description"},
@@ -177,7 +255,7 @@ def main():
             "rows": COMPONENT_ROWS,
         },
         {
-            "title": "2. SERVICE CHARGES",
+            "title": "2. SERVICE CHARGES (OPTION 2)",
             "columns": [
                 {"key": "sn", "label": "S/N", "align": "center"},
                 {"key": "item", "label": "Description"},
@@ -196,7 +274,7 @@ def main():
         "dueDate": DUE_DATE,
         "currency": "TZS",
         "taxRate": 0,
-        "discount": 0,
+        "discount": DISCOUNT,
         "clientName": CLIENT_NAME,
         "clientEmail": "info@tsp.co.tz",
         "clientPhone": "+255 (0)22-2450457",
@@ -214,14 +292,18 @@ def main():
         "footerAddress": COMPANY_ADDRESS_FOOTER,
         "thankYouLine": "Thank you for your business.",
         "referenceNumber": REFERENCE,
-        "itemsTableTitle": "Cost Breakdown — ANDREX SMART 583 Power Supply Repair",
+        "itemsTableTitle": "Cost Breakdown — Option 2 Local Troubleshooting (ANDREX SMART 583)",
         "termsText": (
             f"Ref: Technical Report {REFERENCE} (ANDREX SMART 583, S/N 81226).\n\n"
+            "SCOPE: This invoice covers **Option 2 — Local troubleshooting** as recommended in the technical report.\n\n"
+            "Includes local component-level repair materials, troubleshooting labour, testing, and a "
+            "**6-month warranty for follow-up visit and inspection**.\n\n"
+            "Full imported 5V PSU module replacement (Option 1) is NOT included on this invoice. "
+            "If Option 1 is later selected, a revised invoice will be issued.\n\n"
             "DOCUMENT USE: This document may be used as a Proforma Invoice for quotation / approval "
-            "and as a Tax Invoice for billing and payment. One document serves both purposes.\n\n"
-            "All amounts are in Tanzania Shillings (TZS). Prices shown are final as listed.\n\n"
-            "Diagnostics fee is fixed and non-refundable. Spare parts are imported; lead time applies after approval.\n\n"
-            "Work proceeds upon written approval of this document and the linked technical report."
+            "and as a Tax Invoice for billing and payment.\n\n"
+            "All amounts are in Tanzania Shillings (TZS). Diagnostics fee is fixed and non-refundable.\n\n"
+            "Work proceeds upon written approval of this invoice and selection of Option 2."
         ),
         "items": [],
         "projectTables": {
@@ -243,7 +325,7 @@ def main():
         "invoiceLogo": LOGO_PUBLIC_URL,
         "signatureImage": SIGNATURE_PUBLIC_URL,
         "stampImage": STAMP_PUBLIC_URL,
-        "totals": {"subtotal": grand_total, "taxAmount": 0, "grandTotal": grand_total},
+        "totals": {"subtotal": subtotal, "taxAmount": 0, "grandTotal": grand_total},
         "linkedTechnicalReport": REFERENCE,
     }
 
@@ -254,7 +336,7 @@ def main():
         "issue_date": ISSUE_DATE,
         "due_date": DUE_DATE,
         "currency": "TZS",
-        "subtotal": grand_total,
+        "subtotal": subtotal,
         "tax_amount": 0,
         "grand_total": grand_total,
         "payload": payload,
@@ -288,12 +370,13 @@ def main():
     if report:
         rp = dict(report.get("payload") or {})
         rp["closureNote"] = (
-            f"Enclosure: Invoice {INVOICE_NUMBER} (proforma / tax invoice) — "
-            f"Components TZS {parts_total:,.0f}; Service TZS {service_total:,.0f}; "
-            f"Grand total TZS {grand_total:,.0f}.\n\n"
-            "To proceed with repair we require:\n"
-            "1. Formal approval of this report and the recommended repair strategy.\n"
-            f"2. Approval of invoice {INVOICE_NUMBER}."
+            f"Enclosure: Invoice {INVOICE_NUMBER} — **Option 2 Local troubleshooting** "
+            f"(Subtotal TZS {subtotal:,.0f}; Discount TZS {DISCOUNT:,.0f}; "
+            f"Grand total TZS {grand_total:,.0f}).\n\n"
+            "Please confirm in writing which recommendation you select:\n"
+            "1. Full PSU part replacement — payment before kazi kuisha (separate Option 1 invoice).\n"
+            "2. Local troubleshooting — 6-month warranty for visit and inspection (this invoice).\n\n"
+            "Work proceeds only after that confirmation."
         )
         rp["linkedInvoiceNumber"] = INVOICE_NUMBER
         supabase_request(
@@ -312,6 +395,8 @@ def main():
                 "order": ["components", "service"],
                 "components_total": money(parts_total),
                 "service_total": money(service_total),
+                "subtotal": money(subtotal),
+                "discount": money(DISCOUNT),
                 "grand_total": money(grand_total),
                 "edit_url": f"/dashboard/invoices?invoiceId={inv_id}&mode=edit",
             },

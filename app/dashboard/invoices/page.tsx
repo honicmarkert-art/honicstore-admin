@@ -152,7 +152,11 @@ function documentKindLabels(kind: DocumentKind) {
       : isQuote
         ? "Quotation terms & conditions"
         : "Terms and conditions",
-    acceptanceHeading: isQuote ? "Client acceptance" : isDelivery ? "Proof of receipt" : "",
+    acceptanceHeading: isQuote
+      ? "Client acceptance"
+      : isDelivery
+        ? "Proof of receipt"
+        : "Client approval — sign & stamp",
     preparedByLabel: isQuote ? "Prepared by:" : "",
   }
 }
@@ -1504,6 +1508,30 @@ export default function AdminInvoicesPage({
           <div class="quote-accept-line"></div>
         </div>`
       : ""
+    const invoiceClientAcceptHtml =
+      !isQuotation && !isDeliveryNote
+        ? `<div class="client-approve">
+            <p class="client-approve-title">${escapeHtml(docLabels.acceptanceHeading)}</p>
+            <div class="client-approve-grid">
+              <div>
+                <p class="quote-accept-lbl">Client name / authorised person</p>
+                <div class="quote-accept-line"></div>
+              </div>
+              <div>
+                <p class="quote-accept-lbl">Date</p>
+                <div class="quote-accept-line"></div>
+              </div>
+              <div>
+                <p class="quote-accept-lbl">Signature</p>
+                <div class="quote-accept-line" style="min-height:36px;"></div>
+              </div>
+              <div>
+                <p class="quote-accept-lbl">Company stamp</p>
+                <div class="quote-accept-line" style="min-height:56px;"></div>
+              </div>
+            </div>
+          </div>`
+        : ""
     const deliveryReceiptHtml = isDeliveryNote
       ? `<div class="quote-accept">
           <p class="quote-accept-title">${escapeHtml(docLabels.acceptanceHeading)}</p>
@@ -1675,6 +1703,28 @@ export default function AdminInvoicesPage({
             .quote-accept-title { font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #334155; margin: 0 0 8px; }
             .quote-accept-line { border-bottom: 1px solid #94a3b8; height: 22px; margin: 8px 0 4px; }
             .quote-accept-lbl { font-size: 10px; color: #64748b; margin: 0; text-align: right; }
+            .client-approve {
+              margin-top: 20px;
+              padding-top: 12px;
+              border-top: 1px solid #e2e8f0;
+              break-inside: avoid;
+              page-break-inside: avoid;
+            }
+            .client-approve-title {
+              font-size: 10px;
+              font-weight: 800;
+              letter-spacing: 0.1em;
+              text-transform: uppercase;
+              color: #0f172a;
+              margin: 0 0 12px;
+            }
+            .client-approve-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 14px 24px;
+            }
+            .client-approve-grid .quote-accept-lbl { text-align: left; }
+            .client-approve-grid .quote-accept-line { margin: 6px 0 0; }
             @page { size: A4; margin: 10mm; }
             @media print {
               html, body, * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
@@ -1816,6 +1866,7 @@ export default function AdminInvoicesPage({
                 ${deliveryReceiptHtml}
               </div>
             </div>
+            ${invoiceClientAcceptHtml}
             <div class="bar">
               <div class="line-bg"></div>
               <div class="line-accent"></div>
@@ -3331,6 +3382,32 @@ export default function AdminInvoicesPage({
                   ) : null}
                 </div>
               </div>
+
+              {!isQuotation && !isDeliveryNote ? (
+                <div className="border-t border-slate-200 px-6 py-4">
+                  <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-slate-900">
+                    {docLabels.acceptanceHeading}
+                  </p>
+                  <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <p className="text-[10px] text-slate-500">Client name / authorised person</p>
+                      <div className="mt-1 h-7 border-b border-slate-400" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-500">Date</p>
+                      <div className="mt-1 h-7 border-b border-slate-400" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-500">Signature</p>
+                      <div className="mt-1 h-10 border-b border-slate-400" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-500">Company stamp</p>
+                      <div className="mt-1 h-14 border-b border-slate-400" />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               {/* Bottom bar + contacts */}
               <div className="relative px-6 pb-5 pt-0">

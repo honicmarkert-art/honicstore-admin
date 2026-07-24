@@ -60,7 +60,11 @@ export const TSP_XRAY_PSU_REPORT: TechnicalReportDefaults = {
   problemDescription:
     "The X-ray inspection system fails to start. The ANDREX SMART display and XRS Controller monitor remain blank during startup.",
   closureNote:
-    "Enclosure: A separate proforma invoice is attached with required parts, quantities, and costs.\n\nTo proceed with repair we require:\n1. Formal approval of this report and the recommended repair strategy.\n2. Approval of the procurement budget on the attached proforma invoice.",
+    "Enclosure: Proforma / Invoice INV-2026-TSP-XRAY-PSU is attached (Option 1 costing).\n\n" +
+    "Please confirm in writing which recommendation you select:\n" +
+    "1. Full PSU part replacement — payment before kazi kuisha.\n" +
+    "2. Local troubleshooting — 6-month warranty for visit and inspection.\n\n" +
+    "Work proceeds only after that confirmation (and payment for Option 1).",
   preparedByName: "Authorized Signatory",
   preparedByTitle: "Engineering / Repair Team",
   sections: [
@@ -99,13 +103,23 @@ export const TSP_XRAY_PSU_REPORT: TechnicalReportDefaults = {
       id: "sec-3",
       title: "3. Recommendations & Action Plan",
       body:
-        "**5V PSU:** Replace the 5V external module with a new unit. Repair of the failed module is not recommended for long-term reliability.\n\n**27V / 15V circuits:** Repair by replacing the failed electronic components on the board. This returns that section to normal operating condition when completed and tested.",
+        "Two options are available. The client should select one before work continues.\n\n" +
+        "**Option 1 — Full PSU part replacement**\n" +
+        "Replace the failed power-supply parts in full (external 5V module and required board-level components for 27V/15V stages) as listed on the linked invoice. " +
+        "Payment must be completed **before kazi kuisha** (before repair work is finished / before final commissioning). " +
+        "Imported parts are ordered only after payment confirmation.\n\n" +
+        "**Option 2 — Local troubleshooting**\n" +
+        "Continue local troubleshooting and component-level repair on site / in workshop using locally manageable steps, without waiting for full imported PSU module replacement as the primary path. " +
+        "This option includes a **6-month warranty covering visit and inspection** after the troubleshooting work (follow-up site visit and inspection within six months if related faults reappear). " +
+        "Parts that still require import will be quoted separately if needed.",
     },
     {
       id: "sec-4",
       title: "4. Sourcing & Timeline",
       body:
-        "Most required repair components and the replacement 5V supply are not available locally and must be imported from international suppliers.\n\nImport lead time will add working days after approval. Ordering will start immediately upon confirmation to proceed.",
+        "**Option 1:** Most full-replacement parts (including the 5V PSU) are not available locally and must be imported. Lead time applies after payment.\n\n" +
+        "**Option 2:** Local troubleshooting starts after written approval. Imported items, if later required, follow a separate procurement step.\n\n" +
+        "Ordering / on-site work starts only after the selected option is confirmed in writing.",
     },
   ],
 }
