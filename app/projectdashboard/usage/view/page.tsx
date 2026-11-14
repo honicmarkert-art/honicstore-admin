@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useTheme } from "@/hooks/use-theme"
 import { useCurrency } from "@/contexts/currency-context"
+import { useProjectYear } from "@/contexts/project-year-context"
 
 type Row = {
   client_name: string
@@ -28,6 +29,8 @@ type Row = {
 export default function ProjectUsageViewPage() {
   const { themeClasses } = useTheme()
   const { formatPrice } = useCurrency()
+  const projectYear = useProjectYear()
+  const selectedYear = projectYear?.year
   const sp = useSearchParams()
   const clientName = String(sp.get("clientName") || "").trim()
   const [row, setRow] = useState<Row | null>(null)
@@ -45,7 +48,8 @@ export default function ProjectUsageViewPage() {
       setLoading(true)
       setError(null)
       try {
-        const res = await fetch(`/api/admin/invoices/project-usage?clientName=${encodeURIComponent(clientName)}&t=${Date.now()}`, {
+        const yearQs = selectedYear ? `&year=${selectedYear}` : ""
+        const res = await fetch(`/api/admin/invoices/project-usage?clientName=${encodeURIComponent(clientName)}&t=${Date.now()}${yearQs}`, {
           cache: "no-store",
           credentials: "include",
         })
@@ -64,7 +68,7 @@ export default function ProjectUsageViewPage() {
     return () => {
       cancelled = true
     }
-  }, [clientName])
+  }, [clientName, selectedYear])
 
   return (
     <div className={cn("space-y-6", themeClasses.mainText)}>
@@ -80,7 +84,7 @@ export default function ProjectUsageViewPage() {
         </Button>
       </div>
 
-      {loading ? <p className={cn("text-sm", themeClasses.textNeutralSecondary)}>Loading usage detail...</p> : null}
+      {loading && !row ? <p className={cn("text-sm", themeClasses.textNeutralSecondary)}>Loading usage detail...</p> : null}
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
       {!loading && !error && row ? (

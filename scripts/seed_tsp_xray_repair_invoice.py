@@ -303,7 +303,8 @@ def main():
             "DOCUMENT USE: This document may be used as a Proforma Invoice for quotation / approval "
             "and as a Tax Invoice for billing and payment.\n\n"
             "All amounts are in Tanzania Shillings (TZS). Diagnostics fee is fixed and non-refundable.\n\n"
-            "Work proceeds upon written approval of this invoice and selection of Option 2."
+            "Option 2 has been selected. Work proceeds upon written approval of the technical documentation "
+            "(technical report). Payment will be made after the work is completed."
         ),
         "items": [],
         "projectTables": {
@@ -376,7 +377,8 @@ def main():
             "Please confirm in writing which recommendation you select:\n"
             "1. Full PSU part replacement — payment before kazi kuisha (separate Option 1 invoice).\n"
             "2. Local troubleshooting — 6-month warranty for visit and inspection (this invoice).\n\n"
-            "Work proceeds only after that confirmation."
+            "For Option 2, work proceeds upon written approval of the technical documentation; "
+            "payment is due after the work is completed."
         )
         rp["linkedInvoiceNumber"] = INVOICE_NUMBER
         supabase_request(

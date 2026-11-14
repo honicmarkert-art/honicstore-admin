@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useTheme } from "@/hooks/use-theme"
 import { useCurrency } from "@/contexts/currency-context"
+import { useProjectYear } from "@/contexts/project-year-context"
 
 type SavedInvoice = {
   id: string
@@ -56,9 +57,12 @@ export default function InvoiceClientsListPage({
 }) {
   const { themeClasses } = useTheme()
   const { formatPrice } = useCurrency()
+  const projectYear = useProjectYear()
+  const selectedYear = dashboardScope === "project" ? projectYear?.year : undefined
   const [query, setQuery] = useState("")
   const [invoices, setInvoices] = useState<SavedInvoice[]>([])
   const [loading, setLoading] = useState(true)
+  const showLoading = loading && invoices.length === 0
   const [error, setError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [hidingId, setHidingId] = useState<string | null>(null)
@@ -73,14 +77,15 @@ export default function InvoiceClientsListPage({
   useEffect(() => {
     const ctrl = new AbortController()
     const t = window.setTimeout(async () => {
-      setLoading(true)
+      if (invoices.length === 0) setLoading(true)
       setError(null)
       try {
         const sourceScope = dashboardScope === "project" ? "project" : "main"
         const docKindQs = documentKind ? `&documentKind=${encodeURIComponent(documentKind)}` : ""
+        const yearQs = selectedYear ? `&year=${selectedYear}` : ""
         const qs = query.trim()
-          ? `?clientName=${encodeURIComponent(query.trim())}&limit=200&scope=${sourceScope}${docKindQs}`
-          : `?limit=200&scope=${sourceScope}${docKindQs}`
+          ? `?clientName=${encodeURIComponent(query.trim())}&limit=200&scope=${sourceScope}${docKindQs}${yearQs}`
+          : `?limit=200&scope=${sourceScope}${docKindQs}${yearQs}`
         const res = await fetch(`/api/admin/invoices${qs}`, {
           cache: "no-store",
           credentials: "include",
@@ -102,12 +107,12 @@ export default function InvoiceClientsListPage({
       } finally {
         if (!ctrl.signal.aborted) setLoading(false)
       }
-    }, 250)
+    }, query.trim() ? 250 : 0)
     return () => {
       ctrl.abort()
       window.clearTimeout(t)
     }
-  }, [query, reloadTick, dashboardScope, documentKind])
+  }, [query, reloadTick, dashboardScope, documentKind, selectedYear])
 
   const deleteInvoice = async (invoiceId: string, invoiceNumber: string) => {
     const ok = window.confirm(`Delete invoice ${invoiceNumber || invoiceId}? This cannot be undone.`)
@@ -166,6 +171,81 @@ export default function InvoiceClientsListPage({
     }
   }
 
+  const printSignOffSheet = () => {
+    const names: string[] = []
+    const seen = new Set<string>()
+    for (const inv of invoices) {
+      if (inv.hiddenFromList) continue
+      const name = String(inv.client_name || "").trim()
+      if (!name) continue
+      const key = name.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      names.push(name)
+    }
+    names.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+    const escape = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+    const rows = names
+      .map(
+        (name, i) =>
+          `<tr>
+            <td class="sn">${111 + i}</td>
+            <td class="name">${escape(name)}</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+          </tr>`
+      )
+      .join("")
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Project completion sign-off</title>
+  <style>
+    @page { size: A4 landscape; margin: 12mm; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; }
+    h1 { margin: 0; font-size: 16px; text-align: center; }
+    p.sub { margin: 2px 0 10px; text-align: center; font-size: 11px; color: #334155; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { border: 1px solid #0f172a; padding: 6px 8px; font-size: 11px; }
+    th { background: #0f172a; color: #fff; text-transform: uppercase; letter-spacing: 0.04em; }
+    td { height: 28px; }
+    td.sn { width: 36px; text-align: center; }
+    td.name { width: 28%; }
+  </style>
+</head>
+<body>
+  <h1>HONIC COMPANY LIMITED</h1>
+  <p class="sub"><strong>BATCH 4</strong></p>
+  <p class="sub">Project Dashboard — Unhidden customers &nbsp;|&nbsp; ${new Date().toLocaleDateString("en-GB")} &nbsp;|&nbsp; Numbers start at 111</p>
+  <p class="sub"><strong>PROJECT COMPLETE / SEEN / CNFM / SIGNATURE</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Customer name</th>
+        <th>Project complete</th>
+        <th>Seen</th>
+        <th>CNFM</th>
+        <th>Signature</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+</body>
+</html>`
+    const w = window.open("", "_blank")
+    if (!w) return
+    w.document.open()
+    w.document.write(html)
+    w.document.close()
+    w.focus()
+    w.print()
+  }
+
   const isDeliveryNote = documentKind === "delivery_note"
   const isTechnicalReport = documentKind === "technical_report"
   const listTitle = isTechnicalReport
@@ -190,9 +270,16 @@ export default function InvoiceClientsListPage({
             {isTechnicalReport ? "." : " and total amounts."}
           </p>
         </div>
-        <Button asChild variant="outline">
-          <Link href={studioBasePath}>{backLabel}</Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {dashboardScope === "project" && !isDeliveryNote && !isTechnicalReport ? (
+            <Button type="button" variant="outline" onClick={printSignOffSheet} disabled={loading || invoices.length === 0}>
+              PDF: Project complete / Seen / CNFM
+            </Button>
+          ) : null}
+          <Button asChild variant="outline">
+            <Link href={studioBasePath}>{backLabel}</Link>
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
@@ -256,7 +343,7 @@ export default function InvoiceClientsListPage({
 
       <Card className={cn(themeClasses.cardBg, themeClasses.cardBorder)}>
         <CardContent className="pt-6">
-          {loading ? (
+          {showLoading ? (
             <p className={cn("text-sm", themeClasses.textNeutralSecondary)}>Loading invoices...</p>
           ) : error ? (
             <p className="text-sm text-red-600">{error}</p>

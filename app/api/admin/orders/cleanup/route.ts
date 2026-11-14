@@ -4,6 +4,7 @@ import { enhancedRateLimit, logSecurityEvent } from '@/lib/enhanced-rate-limit'
 import { performanceMonitor } from '@/lib/performance-monitor'
 import { logError, createErrorResponse } from '@/lib/error-handler'
 import { logger } from '@/lib/logger'
+import { expireAwaitingConfirmationOrders } from '@/lib/expire-awaiting-orders'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -57,6 +58,7 @@ export async function POST(request: NextRequest) {
       let totalProcessed = 0
       let failedCount = 0
       let deletedCount = 0
+      const expiredCount = await expireAwaitingConfirmationOrders(supabase)
 
       // Step 1: Mark pending payments as failed after 1 hour
       logger.log('📝 Step 1: Marking pending payments as failed (older than 1 hour)...')
@@ -166,7 +168,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      totalProcessed = failedCount + deletedCount
+      totalProcessed = failedCount + deletedCount + expiredCount
 
       logger.log('🎉 Cleanup completed!')
       logger.log(`- Orders marked as failed: ${failedCount}`)
@@ -191,6 +193,7 @@ export async function POST(request: NextRequest) {
         message: 'Order cleanup completed successfully',
         failedCount,
         deletedCount,
+        expiredCount,
         totalProcessed,
         timestamp: now.toISOString()
       })

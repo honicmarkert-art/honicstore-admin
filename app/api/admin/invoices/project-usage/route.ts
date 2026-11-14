@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { validateAdminAccess, createAdminSupabaseClient } from "@/lib/admin-auth"
+import { parseProjectYear, projectYearOrFilter, recordInProjectYear } from "@/lib/project-year"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -40,14 +41,17 @@ export async function GET(request: NextRequest) {
     if (envError) return NextResponse.json({ error: envError }, { status: 500 })
 
     const requestedClient = String(request.nextUrl.searchParams.get("clientName") || "").trim()
+    const year = parseProjectYear(request.nextUrl.searchParams.get("year"))
 
-    const { data, error } = await supabase
+    let invoiceQuery = supabase
       .from(INVOICES_TABLE)
-      .select("id, client_name, grand_total, payload")
-      .order("created_at", { ascending: false })
+      .select("id, client_name, grand_total, issue_date, created_at, payload")
+      .order("issue_date", { ascending: false })
       .limit(1000)
       .or("payload->>dashboardScope.eq.project,payload->>dashboardScope.is.null")
       .or("payload->>hiddenFromList.is.null,payload->>hiddenFromList.eq.false")
+    if (year) invoiceQuery = invoiceQuery.or(projectYearOrFilter(year))
+    const { data, error } = await invoiceQuery
 
     if (error) {
       return NextResponse.json({ error: "Failed to load project usage", details: error.message }, { status: 500 })
@@ -85,7 +89,8 @@ export async function GET(request: NextRequest) {
 
     const bucket = new Map<string, any>()
 
-    for (const inv of data || []) {
+    const invoices = year ? (data || []).filter((row: any) => recordInProjectYear(row, year)) : data || []
+    for (const inv of invoices) {
       const payload = inv?.payload || {}
       const sections = payload?.projectTables?.sections || []
       const componentUsage = sections[0] ? sectionSubtotal(sections[0]) : 0

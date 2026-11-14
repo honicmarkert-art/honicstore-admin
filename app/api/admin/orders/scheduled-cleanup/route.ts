@@ -3,6 +3,7 @@ import { createAdminSupabaseClient } from '@/lib/admin-auth'
 import { logger } from '@/lib/logger'
 import { performanceMonitor } from '@/lib/performance-monitor'
 import { logError, createErrorResponse } from '@/lib/error-handler'
+import { expireAwaitingConfirmationOrders } from '@/lib/expire-awaiting-orders'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -31,6 +32,7 @@ export async function POST(request: NextRequest) {
       let totalProcessed = 0
       let failedCount = 0
       let deletedCount = 0
+      const expiredCount = await expireAwaitingConfirmationOrders(supabase)
 
       // Step 1: Mark pending payments as failed after 1 hour
       const { data: pendingOrders, error: pendingError } = await supabase
@@ -98,13 +100,14 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      totalProcessed = failedCount + deletedCount
+      totalProcessed = failedCount + deletedCount + expiredCount
 
       return NextResponse.json({
         success: true,
         message: 'Scheduled cleanup completed',
         failedCount,
         deletedCount,
+        expiredCount,
         totalProcessed,
         timestamp: now.toISOString()
       })

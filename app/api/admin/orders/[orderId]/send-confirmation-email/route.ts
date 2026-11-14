@@ -203,7 +203,7 @@ async function sendPaymentConfirmation(order: any, supabase: any) {
       total,
       shippingAddress: shippingAddress || {},
       billingAddress: billingAddress || shippingAddress || {},
-      paymentMethod: order.payment_method || 'ClickPesa',
+      paymentMethod: order.payment_method || 'Snippe',
       trackingUrl: order.tracking_url || buildUrl(`/account/orders/${order.order_number || order.id}`),
       invoiceUrl: buildUrl(`/api/user/orders/${order.order_number || order.id}/invoice`)
     })

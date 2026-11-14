@@ -71,6 +71,7 @@ SECTIONS = [
             "Imported parts are ordered only after payment confirmation.\n\n"
             "**Option 2 — Local troubleshooting**\n"
             "Continue local troubleshooting and component-level repair on site / in workshop using locally manageable steps, without waiting for full imported PSU module replacement as the primary path. "
+            "Work starts after written approval of this technical documentation; **payment is due after the work is completed**. "
             "This option includes a **6-month warranty covering visit and inspection** after the troubleshooting work (follow-up site visit and inspection within six months if related faults reappear). "
             "Parts that still require import will be quoted separately if needed."
         ),
@@ -81,7 +82,7 @@ SECTIONS = [
         "status": "",
         "body": (
             "**Option 1:** Most full-replacement parts (including the 5V PSU) are not available locally and must be imported. Lead time applies after payment.\n\n"
-            "**Option 2:** Local troubleshooting starts after written approval. Imported items, if later required, follow a separate procurement step.\n\n"
+            "**Option 2:** Local troubleshooting starts after written approval of the technical documentation; payment follows after work completion. Imported items, if later required, follow a separate procurement step.\n\n"
             "Ordering / on-site work starts only after the selected option is confirmed in writing."
         ),
     },
@@ -186,7 +187,9 @@ def main():
             "Please confirm in writing which recommendation you select:\n"
             "1. Full PSU part replacement — payment before kazi kuisha.\n"
             "2. Local troubleshooting — 6-month warranty for visit and inspection.\n\n"
-            "Work proceeds only after that confirmation (and payment for Option 1)."
+            "For Option 1, work proceeds after written confirmation and payment. "
+            "For Option 2, work proceeds upon written approval of this technical documentation; "
+            "payment is due after the work is completed."
         ),
         "preparedByName": "Authorized Signatory",
         "preparedByTitle": "Engineering / Repair Team",

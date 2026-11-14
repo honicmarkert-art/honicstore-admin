@@ -301,7 +301,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* Sidebar: mobile = drawer; desktop = fixed strip, optional collapse for full-width main */}
       <div
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-48 max-w-[85vw] transform border-r transition-transform duration-300 ease-in-out",
+          "fixed inset-y-0 left-0 z-50 w-60 max-w-[85vw] transform border-r transition-transform duration-300 ease-in-out",
           themeClasses.cardBg,
           themeClasses.cardBorder,
           "-translate-x-full",
@@ -341,16 +341,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     className={cn("block text-sm font-semibold leading-tight", themeClasses.mainText, "line-clamp-2 hover:opacity-90")}
                     onClick={() => setSidebarOpen(false)}
                   >
-                    Admin Panel
+                    Honic Company Limited
                   </Link>
                   <a
                     href="https://honiccompanystore.com"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-0.5 inline-block max-w-full truncate text-xs font-medium text-blue-600 underline-offset-2 hover:underline"
-                    title="Open storefront"
+                    className="mt-0.5 inline-block max-w-full truncate text-xs font-medium text-[#184a96] underline-offset-2 hover:underline"
+                    title="Open the customer store"
                   >
-                    Home
+                    Open store
                   </a>
                 </div>
               </div>
@@ -396,19 +396,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 showCount = !orderCounts.isLoading
               }
               
+              const active = item.href === "/dashboard"
+                ? pathname === "/dashboard"
+                : pathname === item.href || (pathname.startsWith(`${item.href}/`) && !navigation.some((other) => other.href !== item.href && other.href.startsWith(`${item.href}/`) && (pathname === other.href || pathname.startsWith(`${other.href}/`))))
               return (
                 <Link
                   key={item.name}
                   href={item.href}
                   onClick={() => setSidebarOpen(false)}
                   className={cn(
-                    "group flex items-center justify-between px-2 py-2 text-sm font-medium rounded-md",
-                    themeClasses.mainText,
-                    themeClasses.buttonGhostHoverBg
+                    "group flex items-center justify-between rounded-lg px-2.5 py-2 text-sm",
+                    active ? "bg-[#184a96] font-semibold text-white" : cn(themeClasses.mainText, "hover:bg-slate-100 dark:hover:bg-slate-800")
                   )}
                 >
                   <div className="flex items-center">
-                    <Icon className={cn("mr-3 h-5 w-5", themeClasses.textNeutralSecondary)} />
+                    <Icon className={cn("mr-3 h-4 w-4", active ? "text-white" : themeClasses.textNeutralSecondary)} />
                     {item.name}
                   </div>
                   
@@ -482,7 +484,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <div
         className={cn(
           "flex min-w-0 flex-1 flex-col transition-[padding] duration-300 ease-in-out",
-          navExpanded && "lg:pl-48"
+          navExpanded && "lg:pl-60"
         )}
         suppressHydrationWarning
       >
@@ -538,7 +540,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       : "text-emerald-600/80 dark:text-emerald-400/90"
                   )}
                 />
-                <span className="min-w-0 truncate sm:whitespace-nowrap">Store Financial</span>
+                <span className="min-w-0 truncate sm:whitespace-nowrap">Store</span>
               </Link>
               <Link
                 href="/projectdashboard"
@@ -561,7 +563,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       : "text-blue-600/80 dark:text-blue-400/90"
                   )}
                 />
-                <span className="min-w-0 truncate sm:whitespace-nowrap">Project Financial</span>
+                <span className="min-w-0 truncate sm:whitespace-nowrap">Projects</span>
               </Link>
             </div>
             <div className="flex shrink-0 items-center gap-1 sm:gap-2" suppressHydrationWarning>

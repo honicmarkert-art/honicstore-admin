@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useTheme } from "@/hooks/use-theme"
 import { useCurrency } from "@/contexts/currency-context"
+import { useProjectYear } from "@/contexts/project-year-context"
 
 type UsageRow = {
   client_name: string
@@ -33,6 +34,8 @@ type UsageSummary = {
 export default function ProjectUsagePage() {
   const { themeClasses } = useTheme()
   const { formatPrice } = useCurrency()
+  const projectYear = useProjectYear()
+  const selectedYear = projectYear?.year
   const [rows, setRows] = useState<UsageRow[]>([])
   const [summary, setSummary] = useState<UsageSummary>({
     clientCount: 0,
@@ -45,6 +48,7 @@ export default function ProjectUsagePage() {
     remainingPrice: 0,
   })
   const [loading, setLoading] = useState(true)
+  const showLoading = loading && rows.length === 0
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -53,7 +57,8 @@ export default function ProjectUsagePage() {
       setLoading(true)
       setError(null)
       try {
-        const res = await fetch(`/api/admin/invoices/project-usage?t=${Date.now()}`, { cache: "no-store", credentials: "include" })
+        const yearQs = selectedYear ? `&year=${selectedYear}` : ""
+        const res = await fetch(`/api/admin/invoices/project-usage?t=${Date.now()}${yearQs}`, { cache: "no-store", credentials: "include" })
         const data = await res.json()
         if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load usage summary")
         if (cancelled) return
@@ -78,7 +83,7 @@ export default function ProjectUsagePage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [selectedYear])
 
   return (
     <div className={cn("space-y-6", themeClasses.mainText)}>
@@ -98,7 +103,7 @@ export default function ProjectUsagePage() {
 
       <Card className={cn(themeClasses.cardBg, themeClasses.cardBorder)}>
         <CardContent className="pt-6">
-          {loading ? (
+          {showLoading ? (
             <p className={cn("text-sm", themeClasses.textNeutralSecondary)}>Loading usage table...</p>
           ) : error ? (
             <p className="text-sm text-red-600">{error}</p>

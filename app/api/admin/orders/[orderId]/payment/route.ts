@@ -329,7 +329,7 @@ async function sendPaymentConfirmation(order: any) {
       total,
       shippingAddress: order.shipping_address || {},
       billingAddress: order.billing_address,
-      paymentMethod: order.payment_method || 'ClickPesa',
+      paymentMethod: order.payment_method || 'Snippe',
       trackingUrl: order.tracking_url || buildUrl(`/account/orders/${order.order_number || order.id}`),
       invoiceUrl: buildUrl(`/api/user/orders/${order.order_number || order.id}/invoice`)
     })

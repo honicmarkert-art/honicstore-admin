@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { getDeliveryNotePreset, getDeliveryNotePresetByReference, applyDocumentPricesToItems, presetToSourceLinePrices, type SourceLinePrice } from "@/lib/delivery-note-presets"
+import { isAutoCategoryReference, referenceMatchesCategory } from "@/lib/project-reference"
 import { LOGO_PUBLIC_URL, COMPANY_ADDRESS_DEFAULT, COMPANY_ADDRESS_FOOTER } from "@/lib/technical-report-defaults"
 import { useTheme } from "@/hooks/use-theme"
 import { useToast } from "@/hooks/use-toast"
@@ -321,6 +322,53 @@ function convertInlineBoldToHtml(text: string): string {
   return escapeHtml(text).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
 }
 
+function SheetField({
+  value,
+  onChange,
+  editable,
+  className,
+  multiline,
+  placeholder,
+  inputMode,
+}: {
+  value: string
+  onChange?: (value: string) => void
+  editable: boolean
+  className?: string
+  multiline?: boolean
+  placeholder?: string
+  inputMode?: "text" | "decimal" | "numeric"
+}) {
+  if (!editable) {
+    if (!value.trim()) return null
+    return <span className={cn("whitespace-pre-line", className)}>{value}</span>
+  }
+  const fieldClass = cn(
+    "sheet-field box-border w-full min-w-0 rounded-sm border-0 bg-transparent p-0 text-inherit shadow-none outline-none ring-0 placeholder:text-slate-400 focus:bg-sky-50 print:bg-transparent",
+    className
+  )
+  if (multiline) {
+    return (
+      <textarea
+        value={value}
+        onChange={(e) => onChange?.(e.target.value)}
+        placeholder={placeholder}
+        rows={Math.max(2, value.split("\n").length || 2)}
+        className={cn(fieldClass, "resize-y")}
+      />
+    )
+  }
+  return (
+    <input
+      value={value}
+      onChange={(e) => onChange?.(e.target.value)}
+      placeholder={placeholder}
+      inputMode={inputMode}
+      className={fieldClass}
+    />
+  )
+}
+
 function columnWidthForKey(key: string): string {
   if (key === "sn") return "9%"
   if (key === "item") return "43%"
@@ -356,14 +404,49 @@ function projectEditRowGridClass(section: ExtraTableSection): string {
   return "md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
 }
 
+function isExampleCellValue(value: string): boolean {
+  return /^\s*e\.g\./i.test(String(value || ""))
+}
+
+function sheetCellValue(value: string): string {
+  return isExampleCellValue(value) ? "" : String(value || "")
+}
+
+function sheetCellPlaceholder(value: string, fallback: string): string {
+  const raw = String(value || "").trim()
+  return isExampleCellValue(raw) ? raw : fallback
+}
+
+function projectRowLineAmount(section: ExtraTableSection, row: Record<string, string>): number {
+  if (!canAutoLineTotal(section)) {
+    const totalK = lineTotalColumnKey(section)
+    if (!totalK) return 0
+    const raw = row[totalK] || ""
+    if (isExampleCellValue(raw)) return 0
+    return parseMoneyInput(raw)
+  }
+  const qtyRaw = row.qty || ""
+  const priceRaw = row.unitPrice || ""
+  if (isExampleCellValue(qtyRaw) || isExampleCellValue(priceRaw)) return 0
+  const qty = parseQtyInput(qtyRaw)
+  const unit = parseMoneyInput(priceRaw)
+  if (qty <= 0 || unit <= 0) return 0
+  return qty * unit
+}
+
 function displayProjectTableCell(
   row: Record<string, string>,
   col: ExtraTableColumn,
   rowIndex: number,
-  currency: string
+  currency: string,
+  section?: ExtraTableSection
 ): string {
   if (isSerialColumnKey(col.key)) return String(rowIndex + 1)
   if (col.key === "mark") return ""
+  if (section && canAutoLineTotal(section) && lineTotalColumnKey(section) === col.key) {
+    return money(projectRowLineAmount(section, row))
+  }
+  if (isExampleCellValue(row[col.key] ?? "")) return ""
   return displayProjectCellValue(row[col.key] ?? "", col.key, currency)
 }
 
@@ -410,16 +493,29 @@ function canAutoLineTotal(section: ExtraTableSection): boolean {
 function recomputeProjectRowLineTotal(section: ExtraTableSection, row: Record<string, string>): Record<string, string> {
   if (!canAutoLineTotal(section)) return row
   const totalK = lineTotalColumnKey(section)!
-  const q = parseQtyInput(row.qty || "0")
-  const u = parseMoneyInput(row.unitPrice || "0")
-  const line = q * u
-  if (q <= 0 && u <= 0) return { ...row, [totalK]: "" }
-  if (line <= 0) return { ...row, [totalK]: "" }
-  return { ...row, [totalK]: money(line) }
+  return { ...row, [totalK]: money(projectRowLineAmount(section, row)) }
 }
 
 function isExampleProjectRow(row: Record<string, string>): boolean {
   return Object.values(row).some((value) => /e\.g\./i.test(String(value || "")))
+}
+
+function projectSectionBucket(title: string): "electrical" | "prototype" | "service" | "other" {
+  const text = title.toLowerCase()
+  if (text.includes("service")) return "service"
+  if (text.includes("prototype")) return "prototype"
+  if (text.includes("electric") || text.includes("component")) return "electrical"
+  return "other"
+}
+
+function lineBelongsToSection(lineSection: string, sectionTitle: string): boolean {
+  const line = lineSection.toLowerCase().trim()
+  const title = sectionTitle.toLowerCase().trim()
+  if (!line || line === "items") return false
+  if (title.includes(line) || line.includes(title)) return true
+  const lineBucket = projectSectionBucket(line)
+  const titleBucket = projectSectionBucket(title)
+  return lineBucket !== "other" && lineBucket === titleBucket
 }
 
 function formatLongDate(iso: string): string {
@@ -581,11 +677,7 @@ export default function AdminInvoicesPage({
   const signatureInputRef = useRef<HTMLInputElement | null>(null)
   const stampInputRef = useRef<HTMLInputElement | null>(null)
   const termsTextareaRef = useRef<HTMLTextAreaElement | null>(null)
-  const defaultDocNumber =
-    initialDocumentKind === "delivery_note"
-      ? `DN-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`
-      : `INV-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`
-  const [invoiceNumber, setInvoiceNumber] = useState(defaultDocNumber)
+  const [invoiceNumber, setInvoiceNumber] = useState("")
   const [documentKind, setDocumentKind] = useState<DocumentKind>(initialDocumentKind || "invoice")
   const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10))
   const [dueDate, setDueDate] = useState(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
@@ -609,7 +701,7 @@ export default function AdminInvoicesPage({
     extraTables?.note ?? "Payment is due within 7 days. Please use the invoice number as your payment reference."
   )
   const [signerName, setSignerName] = useState("Authorized Signatory")
-  const [signerTitle, setSignerTitle] = useState("Administrator")
+  const [signerTitle, setSignerTitle] = useState("Abdulaziz Halekwa G.")
   const [footerPhone, setFooterPhone] = useState("+255 786 957 939")
   const [footerEmail, setFooterEmail] = useState("support@honiccompany.com")
   const [footerAddress, setFooterAddress] = useState(COMPANY_ADDRESS_FOOTER)
@@ -621,6 +713,9 @@ export default function AdminInvoicesPage({
   const [itemsTableTitle, setItemsTableTitle] = useState("")
   const [referenceNumber, setReferenceNumber] = useState("")
   const [backorderedNote, setBackorderedNote] = useState("")
+  const [showClientApproval, setShowClientApproval] = useState(false)
+  const [projectCategory, setProjectCategory] = useState("")
+  const nextReferenceCache = useRef<Record<string, string>>({})
   const [items, setItems] = useState<InvoiceItem[]>([
     {
       id: "1",
@@ -633,6 +728,8 @@ export default function AdminInvoicesPage({
   const [isLoadingSavedItems, setIsLoadingSavedItems] = useState(false)
   const [projectTables, setProjectTables] = useState<InvoiceExtraTables | undefined>(extraTables)
   const [isSavingInvoice, setIsSavingInvoice] = useState(false)
+  const [aiBrief, setAiBrief] = useState("")
+  const [isAiFilling, setIsAiFilling] = useState(false)
   const [isLoadingSavedInvoice, setIsLoadingSavedInvoice] = useState(false)
   const [detailSectionVisible, setDetailSectionVisible] = useState<Record<DetailSectionKey, boolean>>({
     branding: true,
@@ -678,6 +775,7 @@ export default function AdminInvoicesPage({
         setBillToEmail(String(p.clientEmail || ""))
         setBillToPhone(String(p.clientPhone || ""))
         setBillToAddress(String(p.clientAddress || ""))
+        setProjectCategory(["fyp", "side", "research"].includes(String(p.projectCategory)) ? String(p.projectCategory) : "")
         setFromName(String(p.fromName || fromName))
         setFromEmail(String(p.fromEmail || fromEmail))
         setFromPhone(String(p.fromPhone || fromPhone))
@@ -685,7 +783,7 @@ export default function AdminInvoicesPage({
         setCompanyWebsite(String(p.companyWebsite || companyWebsite))
         setCompanyTagline(String(p.companyTagline || companyTagline))
         setSignerName(String(p.signerName || signerName))
-        setSignerTitle(String(p.signerTitle || signerTitle))
+        setSignerTitle(String(p.signerTitle || "") === "Administrator" || !String(p.signerTitle || "").trim() ? "Abdulaziz Halekwa G." : String(p.signerTitle))
         setFooterPhone(String(p.footerPhone || footerPhone))
         setFooterEmail(String(p.footerEmail || footerEmail))
         setFooterAddress(String(p.footerAddress || footerAddress))
@@ -694,6 +792,7 @@ export default function AdminInvoicesPage({
         setQuotationScope(String(p.quotationScope || ""))
         setItemsTableTitle(String(p.itemsTableTitle || ""))
         setReferenceNumber(String(p.referenceNumber || p.linkedTechnicalReport || ""))
+        setShowClientApproval(p.showClientApproval === true)
         setBackorderedNote(String(p.backorderedNote || ""))
         if (p.documentKind === "quotation" && p.quotationDisclaimer && typeof p.termsText === "string") {
           const disc = String(p.quotationDisclaimer)
@@ -785,8 +884,6 @@ export default function AdminInvoicesPage({
       unitPrice: it.unitPrice ?? 0,
     }))
     setItems(applyDocumentPricesToItems(presetItems, presetToSourceLinePrices(preset)))
-    const refSlug = preset.referenceNumber.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "")
-    setInvoiceNumber(`DN-${new Date().getFullYear()}-${refSlug}`)
     toast({
       title: "Delivery note loaded",
       description: `${preset.label} — ${preset.items.length} items, dated today.`,
@@ -888,12 +985,7 @@ export default function AdminInvoicesPage({
     })
   }
   const getSectionSubtotal = (section: ExtraTableSection): number => {
-    const totalKey =
-      section.columns.find((col) => /total/i.test(col.key))?.key ??
-      section.columns.find((col) => /amount/i.test(col.key))?.key ??
-      section.columns[section.columns.length - 1]?.key
-    if (!totalKey) return 0
-    return section.rows.reduce((sum, row) => sum + parseMoneyInput(row[totalKey] || "0"), 0)
+    return section.rows.reduce((sum, row) => sum + projectRowLineAmount(section, row), 0)
   }
   const projectSubtotal = useMemo(
     () => visibleProjectSections(projectTables?.sections).reduce((sum, section) => sum + getSectionSubtotal(section), 0),
@@ -998,6 +1090,71 @@ export default function AdminInvoicesPage({
   }
 
   useEffect(() => {
+    if (dashboardScope !== "project") return
+    let cancelled = false
+    const load = async () => {
+      const res = await fetch("/api/admin/invoices?nextReferences=1", { cache: "no-store", credentials: "include" })
+      const data = await res.json().catch(() => null)
+      if (!cancelled && res.ok && data?.references) nextReferenceCache.current = data.references
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [dashboardScope])
+
+  const chooseProjectCategory = (value: string) => {
+    setProjectCategory(value)
+    if (documentKind !== "invoice") return
+    if (!value) {
+      setReferenceNumber((current) => (isAutoCategoryReference(current) ? "" : current))
+      return
+    }
+    const ready = nextReferenceCache.current[value]
+    if (ready) setReferenceNumber(ready)
+  }
+
+  useEffect(() => {
+    if (dashboardScope !== "project" || documentKind !== "invoice" || isLoadingSavedInvoice || isPreviewOnly) return
+    if (!projectCategory) {
+      if (isAutoCategoryReference(referenceNumber)) setReferenceNumber("")
+      return
+    }
+    if (referenceMatchesCategory(referenceNumber, projectCategory)) return
+    let cancelled = false
+    const loadReference = async () => {
+      const res = await fetch(`/api/admin/invoices?nextReference=${projectCategory}`, { cache: "no-store", credentials: "include" })
+      const data = await res.json().catch(() => null)
+      if (!cancelled && res.ok && data?.referenceNumber) setReferenceNumber(String(data.referenceNumber))
+    }
+    void loadReference()
+    return () => {
+      cancelled = true
+    }
+    // referenceNumber is read when the category changes; including it would refetch after every keystroke
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectCategory, dashboardScope, documentKind, isLoadingSavedInvoice, isPreviewOnly])
+
+  useEffect(() => {
+    if (savedInvoiceId || isLoadingSavedInvoice) return
+    if (documentKind === "invoice" && !billToName.trim()) {
+      setInvoiceNumber("")
+      return
+    }
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      const clientQs = documentKind === "invoice" ? `&clientName=${encodeURIComponent(billToName.trim())}` : ""
+      const res = await fetch(`/api/admin/invoices?nextNumber=${documentKind}${clientQs}`, { cache: "no-store", credentials: "include" })
+      const data = await res.json().catch(() => null)
+      if (!cancelled && res.ok && data?.invoiceNumber) setInvoiceNumber(String(data.invoiceNumber))
+    }, 300)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [documentKind, savedInvoiceId, isLoadingSavedInvoice, billToName])
+
+  useEffect(() => {
     if (savedInvoiceId || isLoadingSavedInvoice || !hasProjectTables || !isInvoice || !issueDate) return
     autoFillScheduleDeadlines(issueDate)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initial fill only; issue date edits use handleIssueDateChange
@@ -1015,7 +1172,10 @@ export default function AdminInvoicesPage({
   }
 
   const removeItem = (id: string) => {
-    setItems((prev) => (prev.length > 1 ? prev.filter((item) => item.id !== id) : prev))
+    setItems((prev) => {
+      const remaining = prev.filter((item) => item.id !== id)
+      return remaining.length ? remaining : [{ id: `${Date.now()}`, description: "", quantity: 1, unitPrice: 0 }]
+    })
   }
 
   const applySavedItemToLine = (itemId: string, saved: SavedLineItemCatalogEntry) => {
@@ -1126,6 +1286,95 @@ export default function AdminInvoicesPage({
     })
   }
 
+  const fillInvoiceFromBrief = async () => {
+    const brief = aiBrief.trim()
+    if (brief.length < 8 || isAiFilling) return
+    setIsAiFilling(true)
+    try {
+      const response = await fetch("/api/admin/invoices/assist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            brief,
+            documentKind,
+            dashboardScope,
+            sections: (projectTables?.sections || []).map((section) => section.title),
+          }),
+      })
+      const data = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(data?.error || "Could not prepare the invoice")
+      const draft = data?.draft as {
+        clientName?: string
+        clientAddress?: string
+        clientEmail?: string
+        clientPhone?: string
+        reference?: string
+        notes?: string
+        lines?: Array<{ section?: string; item?: string; qty?: string; unitPrice?: string }>
+      }
+      const lines = Array.isArray(draft?.lines) ? draft.lines : []
+      setBillToName(draft?.clientName || "")
+      setBillToAddress(draft?.clientAddress || "")
+      setBillToEmail(draft?.clientEmail || "")
+      setBillToPhone(draft?.clientPhone || "")
+      if (draft?.notes) setTermsText(draft.notes)
+
+      if (hasProjectTables) {
+        setProjectTables((prev) => {
+          if (!prev?.sections) return prev
+          const sections = prev.sections.map((section) => {
+            const matched = lines.filter((line) => lineBelongsToSection(String(line.section || ""), section.title) && String(line.item || "").trim())
+            if (!matched.length) return section
+            const rows = matched.map((line, index) => {
+              const row: Record<string, string> = {}
+              section.columns.forEach((col) => {
+                row[col.key] = ""
+              })
+              if ("sn" in row || section.columns.some((col) => col.key === "sn")) row.sn = String(index + 1)
+              const itemKey = section.columns.find((col) => col.key === "item")?.key || "item"
+              row[itemKey] = String(line.item || "").trim()
+              if (section.columns.some((col) => col.key === "qty")) row.qty = String(line.qty || "1")
+              if (section.columns.some((col) => col.key === "unitPrice")) {
+                row.unitPrice = line.unitPrice ? formatTzMoneyInput(String(line.unitPrice)) : ""
+              }
+              return recomputeProjectRowLineTotal(section, row)
+            })
+            return { ...section, rows }
+          })
+          return { ...prev, sections }
+        })
+      } else if (lines.length) {
+        setItems(
+          lines.map((line, index) => ({
+            id: `ai-${Date.now()}-${index}`,
+            description: String(line.item || "").trim(),
+            quantity: parseQtyInput(String(line.qty || "1")) || 1,
+            unitPrice: parseMoneyInput(String(line.unitPrice || "0")),
+          }))
+        )
+      }
+
+      const filled = lines.filter((line) => String(line.item || "").trim()).length
+      const summary = data?.summary as { storePriced?: number; invoicePriced?: number; unpriced?: number; clientFromHistory?: boolean } | undefined
+      const priced = (summary?.storePriced || 0) + (summary?.invoicePriced || 0)
+      const priceNote = summary
+        ? `${priced} priced from the store or past invoices${summary.unpriced ? `, ${summary.unpriced} left blank` : ""}${summary.clientFromHistory ? ". Client details came from a saved invoice" : ""}.`
+        : "Check prices before you save."
+      toast({
+        title: "Invoice draft filled",
+        description: filled ? `${filled} line${filled === 1 ? "" : "s"}. ${priceNote}` : "Client details were written. Add the item lines on the invoice.",
+      })
+    } catch (error) {
+      toast({
+        title: "Could not fill the invoice",
+        description: error instanceof Error ? error.message : "Gemini did not return a draft.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsAiFilling(false)
+    }
+  }
+
   const addProjectSectionRow = (sectionIndex: number) => {
     setProjectTables((prev) => {
       if (!prev?.sections) return prev
@@ -1149,10 +1398,11 @@ export default function AdminInvoicesPage({
       if (!prev?.sections) return prev
       const sections = prev.sections.map((section, sIdx) => {
         if (sIdx !== sectionIndex) return section
-        if (section.rows.length <= 1) return section
-        const rows = section.rows.filter((_, idx) => idx !== rowIndex).map((row, idx) => {
-          const hasSn = section.columns.some((c) => isSerialColumnKey(c.key))
-          return hasSn ? { ...row, sn: String(idx + 1) } : row
+        const hasSn = section.columns.some((c) => isSerialColumnKey(c.key))
+        const remaining = section.rows.filter((_, idx) => idx !== rowIndex)
+        const rows = (remaining.length ? remaining : [Object.fromEntries(section.columns.map((col) => [col.key, ""]))]).map((row, idx) => {
+          const next = hasSn ? { ...row, sn: String(idx + 1) } : row
+          return recomputeProjectRowLineTotal(section, next)
         })
         return { ...section, rows }
       })
@@ -1396,7 +1646,7 @@ export default function AdminInvoicesPage({
                 if (col.key === "mark") {
                   return `<td class="c">${markCellHtml()}</td>`
                 }
-                const value = displayProjectTableCell(row, col, rowIndex, currency)
+                const value = displayProjectTableCell(row, col, rowIndex, currency, section)
                 const klass = col.align === "right" ? "r" : col.align === "center" ? "c" : ""
                 const rowRed = isPrototype && isPrototypeRowHighlighted(row)
                 return `<td class="${klass}" style="${rowRed ? "color:#b91c1c;" : ""}">${escapeHtml(value)}</td>`
@@ -1509,7 +1759,7 @@ export default function AdminInvoicesPage({
         </div>`
       : ""
     const invoiceClientAcceptHtml =
-      !isQuotation && !isDeliveryNote
+      !isQuotation && !isDeliveryNote && showClientApproval
         ? `<div class="client-approve">
             <p class="client-approve-title">${escapeHtml(docLabels.acceptanceHeading)}</p>
             <div class="client-approve-grid">
@@ -1859,8 +2109,8 @@ export default function AdminInvoicesPage({
               </div>
               <div class="sign">
                 ${isDeliveryNote ? `<p class="sign-name" style="font-size:11px;">Dispatched by: ${escapeHtml(signerName)}</p>` : `<p class="sign-name">${escapeHtml(signerName)}</p>`}
-                ${isDeliveryNote ? "" : signBoldSignatureHtml}
                 ${isDeliveryNote ? "" : `<p class="sign-t">${escapeHtml(signerTitle)}</p>`}
+                ${isDeliveryNote ? "" : signBoldSignatureHtml}
                 ${stampBelowSignatureHtml}
                 ${quoteAcceptHtml}
                 ${deliveryReceiptHtml}
@@ -2038,6 +2288,8 @@ export default function AdminInvoicesPage({
       referenceNumber,
       linkedTechnicalReport: !isDeliveryNote && !isQuotation ? referenceNumber.trim() : undefined,
       backorderedNote,
+      showClientApproval,
+      projectCategory: dashboardScope === "project" ? projectCategory : undefined,
       items,
       paymentMethods,
       projectTables,
@@ -2065,6 +2317,14 @@ export default function AdminInvoicesPage({
       }
       if (data?.invoice?.invoice_number) {
         setInvoiceNumber(String(data.invoice.invoice_number))
+      }
+      if (data?.invoice?.payload?.referenceNumber) {
+        const savedReference = String(data.invoice.payload.referenceNumber)
+        setReferenceNumber(savedReference)
+        if (projectCategory && nextReferenceCache.current[projectCategory] === savedReference) {
+          const match = savedReference.match(/^(.*-)(\d+)$/)
+          if (match) nextReferenceCache.current[projectCategory] = `${match[1]}${String(Number(match[2]) + 1).padStart(4, "0")}`
+        }
       }
       const nextInvoiceId = String(data?.invoice?.id || "")
       if (!savedInvoiceId && nextInvoiceId) {
@@ -2095,868 +2355,117 @@ export default function AdminInvoicesPage({
     }
   }
 
+  const docNav = [
+    { kind: "invoice" as const, label: "Invoice" },
+    { kind: "quotation" as const, label: "Quotation" },
+    { kind: "delivery_note" as const, label: "Delivery Note" },
+  ]
+  const savedDocumentsLabel = documentKind === "delivery_note" ? "View Saved Notes" : documentKind === "quotation" ? "View Saved Quotations" : "View Saved Invoices"
+
   return (
-    <div className={cn("space-y-6", themeClasses.mainText)}>
-      <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">{documentKind === "delivery_note" ? "Delivery Note Studio" : "Invoice Studio"}</h1>
-          <p className={cn("mt-1 text-sm", themeClasses.textNeutralSecondary)}>
-            {documentKind === "delivery_note"
-              ? "Professional shipping document — item quantities only, proof of receipt."
-              : "Blue header style, zebra rows, payment block — matches classic agency invoices."}
-          </p>
-          {savedInvoiceId ? (
-            <p className={cn("mt-1 text-xs", themeClasses.textNeutralSecondary)}>
-              {isLoadingSavedInvoice ? "Loading saved invoice..." : `Loaded saved invoice (${studioMode || "edit"} mode).`}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex flex-col items-stretch gap-3 sm:items-end">
-          {!isPreviewOnly && !lockDocumentKind ? (
-            <div className="inline-flex self-start rounded-lg border border-border p-0.5 sm:self-end">
-              <Button
-                type="button"
-                size="sm"
-                variant={documentKind === "invoice" ? "default" : "ghost"}
-                className={cn(
-                  "h-8 rounded-md px-4 text-xs font-semibold",
-                  documentKind === "invoice" && "bg-[#184a96] text-white hover:bg-[#184a96]/90"
-                )}
-                onClick={() => switchDocumentKind("invoice")}
-              >
-                Invoice
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={documentKind === "quotation" ? "default" : "ghost"}
-                className={cn(
-                  "h-8 rounded-md px-4 text-xs font-semibold",
-                  documentKind === "quotation" && "bg-[#184a96] text-white hover:bg-[#184a96]/90"
-                )}
-                onClick={() => switchDocumentKind("quotation")}
-              >
-                Quotation
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={documentKind === "delivery_note" ? "default" : "ghost"}
-                className={cn(
-                  "h-8 rounded-md px-4 text-xs font-semibold",
-                  documentKind === "delivery_note" && "bg-[#184a96] text-white hover:bg-[#184a96]/90"
-                )}
-                onClick={() => switchDocumentKind("delivery_note")}
-              >
-                Delivery Note
-              </Button>
-            </div>
-          ) : (
-            <span className="self-start rounded-md bg-muted px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:self-end">
-              {docLabels.title}
-            </span>
-          )}
-          <div className="flex flex-wrap gap-2">
-          {isPreviewOnly ? (
-            <Button variant="outline" asChild>
-              <Link href={backToSavedInvoice}>
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Back
-              </Link>
-            </Button>
-          ) : null}
-          <Button variant="outline" asChild>
-            <Link href={savedListHref}>
-              {documentKind === "delivery_note" ? "View Saved Delivery Notes" : "View Saved Invoices"}
-            </Link>
-          </Button>
-          {!isPreviewOnly ? (
-            <Button variant="outline" onClick={saveInvoiceToDatabase} className="gap-2" disabled={isSavingInvoice}>
-              {isSavingInvoice ? "Saving..." : docLabels.saveButtonLabel}
-            </Button>
-          ) : null}
-          <Button variant="outline" onClick={() => window.print()} className="gap-2">
-            <Printer className="h-4 w-4" />
-            Print
-          </Button>
-          <Button
-            onClick={downloadAsPdf}
-            className="gap-2 border-0 bg-[#1e5bb8] text-white hover:bg-[#1a4fa3] hover:text-white"
-          >
-            <FileDown className="h-4 w-4" />
-            Download PDF
-          </Button>
+    <div className={cn(themeClasses.mainText)}>
+      <style>{`@media print { .sheet-field { background: transparent !important; border: 0 !important; box-shadow: none !important; outline: none !important; } .sheet-only-screen, .invoice-tools { display: none !important; } }`}</style>
+      <div className={cn("mx-auto w-full max-w-[1180px]", isPreviewOnly && "max-w-[860px]")}>
+      {!isPreviewOnly ? (
+        <div className="invoice-tools mb-6 flex flex-col gap-4 border-b border-slate-200 pb-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Invoice Studio</h1>
+            <p className="mt-1 text-sm text-slate-500">Blue header style, zebra rows, payment block — matches classic agency invoices.</p>
           </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        {!isPreviewOnly ? (
-        <Card className={cn("lg:col-span-5", themeClasses.cardBg, themeClasses.cardBorder, "shadow-sm")}>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Sparkles className="h-5 w-5" />
-              Details
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded-md border border-border/70 px-3 py-2 text-left"
-                onClick={() => toggleDetailSection("branding")}
-              >
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">Branding</span>
-                <ChevronDown className={cn("h-4 w-4 transition-transform", detailSectionVisible.branding && "rotate-180")} />
-              </button>
-              {detailSectionVisible.branding ? (
-            <div className="rounded-xl border border-dashed border-border p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  ref={logoInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleLogoUpload}
-                />
-                <Button type="button" size="sm" variant="outline" className="gap-2" onClick={() => logoInputRef.current?.click()}>
-                  <ImagePlus className="h-4 w-4" />
-                  Upload logo
-                </Button>
-                <Button type="button" size="sm" variant="ghost" className="gap-2" onClick={clearLogo} disabled={!invoiceLogo}>
-                  <RotateCcw className="h-4 w-4" />
-                  Clear
-                </Button>
-                <span className={cn("text-xs", themeClasses.textNeutralSecondary)}>Saved on this device.</span>
-              </div>
-            </div>
-              ) : null}
-            </div>
-
-            <div className="space-y-2">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded-md border border-border/70 px-3 py-2 text-left"
-                onClick={() => toggleDetailSection("company")}
-              >
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">Company</span>
-                <ChevronDown className={cn("h-4 w-4 transition-transform", detailSectionVisible.company && "rotate-180")} />
-              </button>
-              {detailSectionVisible.company ? (
-              <>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>Company name</label>
-                <Input value={fromName} onChange={(e) => setFromName(e.target.value)} />
-              </div>
-              <div>
-                <label className={cn("mb-1 block text-xs font-semibold", themeClasses.textNeutralSecondary)}>Tagline (e.g. CREATIVE AGENCY)</label>
-                <Input
-                  value={companyTagline}
-                  onChange={(e) => setCompanyTagline(e.target.value)}
-                  className="font-semibold tracking-wide"
-                />
-              </div>
-            </div>
-            <div>
-              <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>
-                Company address (shown under company name)
-              </label>
-              <Textarea
-                value={fromAddress}
-                onChange={(e) => setFromAddress(e.target.value)}
-                rows={2}
-                className="min-h-[56px] resize-y"
-                placeholder="Office address"
-              />
-            </div>
-            <div>
-              <label className={cn("mb-1 block text-xs font-bold", themeClasses.textNeutralSecondary)}>Website (small text, top-right under line)</label>
-              <Input
-                value={companyWebsite}
-                onChange={(e) => setCompanyWebsite(e.target.value)}
-                placeholder="example.com"
-                className="font-semibold opacity-100"
-              />
-            </div>
-              </>
-              ) : null}
-            </div>
-
-            <div className="space-y-2">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded-md border border-border/70 px-3 py-2 text-left"
-                onClick={() => toggleDetailSection("invoiceMeta")}
-              >
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">{docLabels.metaSection}</span>
-                <ChevronDown className={cn("h-4 w-4 transition-transform", detailSectionVisible.invoiceMeta && "rotate-180")} />
-              </button>
-              {detailSectionVisible.invoiceMeta ? (
-            <div className="space-y-3">
-              {!lockDocumentKind ? (
-              <div>
-                <label className={cn("mb-1.5 block text-xs font-medium", themeClasses.textNeutralSecondary)}>Document type</label>
-                <div className="inline-flex rounded-lg border border-border p-0.5">
-                  <Button
+          <div className="flex flex-col items-stretch gap-2 sm:items-end">
+            {!lockDocumentKind ? (
+              <div className="flex flex-wrap gap-2 sm:justify-end">
+                {docNav.map((item) => (
+                  <button
+                    key={item.kind}
                     type="button"
-                    size="sm"
-                    variant={documentKind === "invoice" ? "default" : "ghost"}
+                    onClick={() => switchDocumentKind(item.kind)}
                     className={cn(
-                      "h-8 rounded-md px-4 text-xs font-semibold",
-                      documentKind === "invoice" && "bg-[#184a96] text-white hover:bg-[#184a96]/90"
+                      "rounded-md px-3 py-1.5 text-sm",
+                      documentKind === item.kind ? "bg-[#184a96] font-semibold text-white" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                     )}
-                    onClick={() => switchDocumentKind("invoice")}
                   >
-                    Invoice
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={documentKind === "quotation" ? "default" : "ghost"}
-                    className={cn(
-                      "h-8 rounded-md px-4 text-xs font-semibold",
-                      documentKind === "quotation" && "bg-[#184a96] text-white hover:bg-[#184a96]/90"
-                    )}
-                    onClick={() => switchDocumentKind("quotation")}
-                  >
-                    Quotation
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={documentKind === "delivery_note" ? "default" : "ghost"}
-                    className={cn(
-                      "h-8 rounded-md px-4 text-xs font-semibold",
-                      documentKind === "delivery_note" && "bg-[#184a96] text-white hover:bg-[#184a96]/90"
-                    )}
-                    onClick={() => switchDocumentKind("delivery_note")}
-                  >
-                    Delivery Note
-                  </Button>
-                </div>
-              </div>
-              ) : null}
-              {isQuotation ? (
-                <>
-                  <div>
-                    <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>
-                      Items table title
-                    </label>
-                    <Input
-                      value={itemsTableTitle}
-                      onChange={(e) => setItemsTableTitle(e.target.value)}
-                      placeholder="Heading shown above the line items table"
-                    />
-                  </div>
-                  <div>
-                    <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>
-                      Scope / project summary
-                    </label>
-                    <Textarea
-                      value={quotationScope}
-                      onChange={(e) => setQuotationScope(e.target.value)}
-                      placeholder="Brief description of what this quotation covers…"
-                      rows={2}
-                      className="min-h-[56px] resize-y text-sm"
-                    />
-                  </div>
-                </>
-              ) : null}
-              {isDeliveryNote ? (
-                <>
-                  <div>
-                    <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>
-                      Order / PO reference
-                    </label>
-                    <Input
-                      value={referenceNumber}
-                      onChange={(e) => setReferenceNumber(e.target.value)}
-                      placeholder="e.g. HC-PI-2026-017"
-                    />
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      Line prices auto-fill from the linked quotation or invoice.
-                    </p>
-                  </div>
-                  <div>
-                    <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>
-                      Missing / backordered items
-                    </label>
-                    <Textarea
-                      value={backorderedNote}
-                      onChange={(e) => setBackorderedNote(e.target.value)}
-                      placeholder="List any items not included in this shipment…"
-                      rows={2}
-                      className="min-h-[56px] resize-y text-sm"
-                    />
-                  </div>
-                </>
-              ) : null}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div>
-                <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>{docLabels.numberField}</label>
-                <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
-              </div>
-              {!isDeliveryNote && !isQuotation ? (
-                <div>
-                  <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>
-                    Report Ref No
-                  </label>
-                  <Input
-                    value={referenceNumber}
-                    onChange={(e) => setReferenceNumber(e.target.value)}
-                    placeholder="e.g. TR-2026-0001"
-                  />
-                </div>
-              ) : null}
-              <div>
-                <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>{docLabels.issueDateLabel.replace(/:$/, "")}</label>
-                <Input type="date" value={issueDate} onChange={(e) => handleIssueDateChange(e.target.value)} />
-              </div>
-              <div>
-                <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>{docLabels.dueLabel.replace(/:$/, "")}</label>
-                <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-              </div>
-            </div>
-            </div>
-              ) : null}
-            </div>
-
-            <div className="space-y-2">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded-md border border-border/70 px-3 py-2 text-left"
-                onClick={() => toggleDetailSection("contacts")}
-              >
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">Contacts</span>
-                <ChevronDown className={cn("h-4 w-4 transition-transform", detailSectionVisible.contacts && "rotate-180")} />
-              </button>
-              {detailSectionVisible.contacts ? (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <p className={cn("text-xs font-semibold uppercase tracking-wide", themeClasses.textNeutralSecondary)}>From (contact)</p>
-                <Input value={fromEmail} onChange={(e) => setFromEmail(e.target.value)} placeholder="Email" type="email" />
-                <Input value={fromPhone} onChange={(e) => setFromPhone(e.target.value)} placeholder="Phone" />
-              </div>
-              <div className="space-y-2">
-                <p className={cn("text-xs font-semibold uppercase tracking-wide", themeClasses.textNeutralSecondary)}>{docLabels.billToLabel.replace(/:$/, "")}</p>
-                <Input value={billToName} onChange={(e) => setBillToName(e.target.value)} placeholder="Client name" />
-                <Textarea value={billToAddress} onChange={(e) => setBillToAddress(e.target.value)} placeholder="Address" rows={3} className="min-h-[72px] resize-y" />
-                <Input value={billToEmail} onChange={(e) => setBillToEmail(e.target.value)} placeholder="Client email" type="email" />
-                <Input value={billToPhone} onChange={(e) => setBillToPhone(e.target.value)} placeholder="Client phone" />
-              </div>
-            </div>
-              ) : null}
-            </div>
-
-            <div className="space-y-2">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded-md border border-border/70 px-3 py-2 text-left"
-                onClick={() => toggleDetailSection("items")}
-              >
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">Items / project</span>
-                <ChevronDown className={cn("h-4 w-4 transition-transform", detailSectionVisible.items && "rotate-180")} />
-              </button>
-              {detailSectionVisible.items ? (hasProjectTables ? (
-              <div className="space-y-4">
-                <div className="rounded-lg border border-border/80 bg-muted/20 p-3 space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Show on invoice</p>
-                  {projectTables?.sections?.map((section, sectionIndex) => (
-                    <label key={`vis-${section.title}`} className="flex items-center gap-2 text-sm text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={isProjectSectionVisible(section)}
-                        onChange={(e) => toggleProjectSectionVisibility(sectionIndex, e.target.checked)}
-                        className="h-4 w-4 rounded border-slate-300"
-                      />
-                      {section.title}
-                    </label>
-                  ))}
-                  {isInvoice && projectTables?.paymentSchedule?.length ? (
-                    <label className="flex items-center gap-2 text-sm text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={!projectTables.hidePaymentSchedule}
-                        onChange={(e) => togglePaymentScheduleVisibility(e.target.checked)}
-                        className="h-4 w-4 rounded border-slate-300"
-                      />
-                      Payment schedule
-                    </label>
-                  ) : null}
-                </div>
-                <p className={cn("text-xs font-semibold uppercase tracking-wide", themeClasses.textNeutralSecondary)}>
-                  Project sections (editable)
-                </p>
-                {projectTables?.sections?.map((section, sectionIndex) => {
-                  const prototypeSection = isPrototypeSectionTitle(section.title)
-                  const editColumns = isDeliveryNote
-                    ? deliveryNoteColumns(editableProjectColumns(section))
-                    : editableProjectColumns(section)
-                  const projectRowGridClass = projectEditRowGridClass(section)
-                  const sectionVisible = isProjectSectionVisible(section)
-                  return (
-                  <div key={section.title} className="space-y-2">
-                  <div className={cn("rounded-lg border border-border/80 p-3", !sectionVisible && "opacity-60")}>
-                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-3">
-                        <p className="text-xs font-extrabold uppercase tracking-wide text-slate-700">{section.title}</p>
-                        <label className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600">
-                          <input
-                            type="checkbox"
-                            checked={sectionVisible}
-                            onChange={(e) => toggleProjectSectionVisibility(sectionIndex, e.target.checked)}
-                            className="h-3.5 w-3.5 rounded border-slate-300"
-                          />
-                          Show on invoice
-                        </label>
-                      </div>
-                      <Button type="button" size="sm" variant="outline" className="h-7 gap-1" onClick={() => addProjectSectionRow(sectionIndex)}>
-                        <Plus className="h-3.5 w-3.5" />
-                        Row
-                      </Button>
-                    </div>
-                    <div className="space-y-2">
-                      {section.rows.map((row, rowIndex) => (
-                        <div key={`${section.title}-${rowIndex}`} className={cn("grid grid-cols-1 gap-2", projectRowGridClass)}>
-                          {editColumns.map((col) => {
-                            const lineTotalK = lineTotalColumnKey(section)
-                            const isAutoLineTotalField =
-                              Boolean(lineTotalK && canAutoLineTotal(section) && col.key === lineTotalK)
-                            if (col.key === "item") {
-                              return (
-                                <div key={`${section.title}-${rowIndex}-${col.key}`} className="min-w-0 space-y-1">
-                                  <SavedItemPicker
-                                    items={savedItemCatalog}
-                                    disabled={isLoadingSavedItems}
-                                    hidePrices={false}
-                                    onSelect={(saved) => applySavedItemToProjectRow(sectionIndex, rowIndex, saved)}
-                                  />
-                                  <Input
-                                    value={row[col.key] || ""}
-                                    onChange={(e) => updateProjectSectionCell(sectionIndex, rowIndex, col.key, e.target.value)}
-                                    placeholder={col.label}
-                                    className={cn(
-                                      "min-w-0",
-                                      prototypeSection && isPrototypeRowHighlighted(row) && "text-red-700"
-                                    )}
-                                  />
-                                </div>
-                              )
-                            }
-                            return (
-                              <Input
-                                key={`${section.title}-${rowIndex}-${col.key}`}
-                                value={row[col.key] || ""}
-                                readOnly={isAutoLineTotalField}
-                                onChange={(e) => updateProjectSectionCell(sectionIndex, rowIndex, col.key, e.target.value)}
-                                placeholder={col.label}
-                                className={cn(
-                                  isAutoLineTotalField && "cursor-default bg-muted/50 tabular-nums",
-                                  prototypeSection && isPrototypeRowHighlighted(row) && "text-red-700"
-                                )}
-                              />
-                            )
-                          })}
-                          <div className="flex items-center justify-end gap-2">
-                            {prototypeSection ? (
-                              <label className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700">
-                                <input
-                                  type="checkbox"
-                                  checked={isPrototypeRowHighlighted(row)}
-                                  onChange={(e) => togglePrototypeSectionRowHighlight(sectionIndex, rowIndex, e.target.checked)}
-                                  className="h-4 w-4 rounded border-slate-300"
-                                />
-                                Red
-                              </label>
-                            ) : null}
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-9 w-9"
-                              onClick={() => removeProjectSectionRow(sectionIndex, rowIndex)}
-                              aria-label="Remove row"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  </div>
-                );
-                })}
-                {hasProjectTables && isInvoice && projectTables?.paymentSchedule?.length ? (
-                  <div className={cn("rounded-lg border border-border/80 p-3", projectTables.hidePaymentSchedule && "opacity-60")}>
-                    <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-xs font-extrabold uppercase tracking-wide text-slate-700">Payment schedule</p>
-                      <label className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600">
-                        <input
-                          type="checkbox"
-                          checked={!projectTables.hidePaymentSchedule}
-                          onChange={(e) => togglePaymentScheduleVisibility(e.target.checked)}
-                          className="h-3.5 w-3.5 rounded border-slate-300"
-                        />
-                        Show on invoice
-                      </label>
-                    </div>
-                    <p className={cn("mb-3 text-[11px]", themeClasses.textNeutralSecondary)}>
-                      Phases 1-2 use half of (invoice total - service), phases 3-4 use half of service. Deadlines auto-fill from issue date to 25/07, split evenly across 4 phases (edit if needed).
-                    </p>
-                    <div className="space-y-2">
-                      {paymentScheduleDisplay.map((row, rowIndex) => (
-                        <div
-                          key={row.phase}
-                          className="grid grid-cols-1 items-end gap-2 border-b border-border/60 pb-2 md:grid-cols-[2rem_1fr_4.5rem_1fr_1fr] md:items-center"
-                        >
-                          <p className="text-xs font-bold text-slate-800">{row.phase}</p>
-                          <p className="text-xs text-slate-600 md:pr-1">{row.description}</p>
-                          <p className="text-right text-xs font-semibold text-slate-800">{row.amount}</p>
-                          <p className="text-right text-xs font-semibold tabular-nums text-slate-900">{money(row.amountToPay)}</p>
-                          <Input
-                            value={row.deadline}
-                            onChange={(e) => updatePaymentScheduleCell(rowIndex, "deadline", e.target.value)}
-                            onBlur={() => normalizePaymentScheduleDeadlineOnBlur(rowIndex)}
-                            placeholder="Deadline (DD/MM/YYYY)"
-                            maxLength={10}
-                            className="h-8 text-xs"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    <div className="mt-3">
-                      <label className={cn("mb-1 block text-[10px] font-medium uppercase", themeClasses.textNeutralSecondary)}>Total duration (FINAL row, last column)</label>
-                      <Input
-                        value={computedPaymentDuration}
-                        readOnly
-                        placeholder="Auto from schedule dates"
-                        className="h-8 cursor-default bg-muted/50 text-sm"
-                      />
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className={cn("text-xs font-semibold uppercase tracking-wide", themeClasses.textNeutralSecondary)}>
-                    {isDeliveryNote ? "Items delivered" : "Line items"}
-                  </p>
-                  <Button size="sm" variant="outline" onClick={addItem} className="gap-1">
-                    <Plus className="h-3.5 w-3.5" />
-                    Add
-                  </Button>
-                </div>
-                {items.map((item) => (
-                  <div key={item.id} className="grid grid-cols-12 gap-2 rounded-lg border border-border/80 bg-muted/20 p-2 dark:bg-muted/10">
-                    <div className="col-span-12 space-y-1 sm:col-span-5">
-                      <SavedItemPicker
-                        items={savedItemCatalog}
-                        disabled={isLoadingSavedItems}
-                        hidePrices={false}
-                        onSelect={(saved) => applySavedItemToLine(item.id, saved)}
-                      />
-                      <Input
-                        value={item.description}
-                        placeholder={isDeliveryNote ? "Item description" : "Description"}
-                        onChange={(e) => updateItem(item.id, { description: e.target.value })}
-                      />
-                    </div>
-                    <Input
-                      type="number"
-                      min={1}
-                      className="col-span-4 sm:col-span-2"
-                      value={item.quantity}
-                      onChange={(e) => updateItem(item.id, { quantity: Math.max(1, Number(e.target.value) || 1) })}
-                      placeholder="Qty"
-                    />
-                    <Input
-                      type="number"
-                      min={0}
-                      className={cn("col-span-4 sm:col-span-2", isDeliveryNote && "cursor-default bg-muted/50")}
-                      value={item.unitPrice}
-                      readOnly={isDeliveryNote}
-                      onChange={(e) => updateItem(item.id, { unitPrice: Math.max(0, Number(e.target.value) || 0) })}
-                      placeholder={isDeliveryNote ? "From document" : "Unit"}
-                    />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="col-span-4 sm:col-span-1"
-                      onClick={() => removeItem(item.id)}
-                      aria-label="Remove line"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                    <p className="col-span-12 text-right text-xs font-medium tabular-nums text-muted-foreground">
-                      Line total: {money(item.quantity * item.unitPrice)}
-                    </p>
-                  </div>
+                    {item.label}
+                  </button>
                 ))}
               </div>
-            )) : null}
-            </div>
-
-            {docLabels.showTotals ? (
-            <div className="space-y-2">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded-md border border-border/70 px-3 py-2 text-left"
-                onClick={() => toggleDetailSection("totals")}
-              >
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">Totals</span>
-                <ChevronDown className={cn("h-4 w-4 transition-transform", detailSectionVisible.totals && "rotate-180")} />
-              </button>
-              {detailSectionVisible.totals ? (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div>
-                <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>Currency</label>
-                <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} />
-              </div>
-              <div>
-                <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>Tax %</label>
-                <Input type="number" min={0} value={taxRate} onChange={(e) => setTaxRate(Math.max(0, Number(e.target.value) || 0))} />
-              </div>
-              <div>
-                <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>Discount</label>
-                <Input type="number" min={0} value={discount} onChange={(e) => setDiscount(Math.max(0, Number(e.target.value) || 0))} />
-              </div>
-            </div>
-              ) : null}
-            </div>
             ) : null}
-
-            {isInvoice ? (
-            <div className="space-y-2">
+            <div className="flex flex-wrap gap-2 sm:justify-end">
+              <Link href={savedListHref} className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50">
+                {savedDocumentsLabel}
+              </Link>
               <button
                 type="button"
-                className="flex w-full items-center justify-between rounded-md border border-border/70 px-3 py-2 text-left"
-                onClick={() => toggleDetailSection("paymentMethods")}
+                onClick={() => saveInvoiceToDatabase()}
+                disabled={isSavingInvoice}
+                className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
               >
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">Payment methods</span>
-                <ChevronDown className={cn("h-4 w-4 transition-transform", detailSectionVisible.paymentMethods && "rotate-180")} />
+                {isSavingInvoice ? "Saving..." : docLabels.saveButtonLabel}
               </button>
-              {detailSectionVisible.paymentMethods ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className={cn("text-xs font-semibold uppercase tracking-wide", themeClasses.textNeutralSecondary)}>Payment methods</p>
-                <Button type="button" size="sm" variant="outline" onClick={addPaymentMethod} className="gap-1">
-                  <Plus className="h-3.5 w-3.5" />
-                  Add method
-                </Button>
-              </div>
-              {paymentMethods.map((pm) => (
-                <div
-                  key={pm.id}
-                  className={cn(
-                    "rounded-lg border border-border/80 bg-muted/15 p-3 dark:bg-muted/10",
-                    paymentMethods.length > 1 && "relative"
-                  )}
+              <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50">
+                <Printer className="h-4 w-4" />
+                Print
+              </button>
+              <button type="button" onClick={downloadAsPdf} className="inline-flex items-center gap-2 rounded-md bg-[#184a96] px-3 py-2 text-sm font-semibold text-white hover:bg-[#123a78]">
+                <FileDown className="h-4 w-4" />
+                Download PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="invoice-tools mb-4">
+          <Link href={backToSavedInvoice} className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900">
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Link>
+        </div>
+      )}
+      <div className={cn("flex w-full flex-col gap-8 lg:flex-row lg:items-start")}>
+        {!isPreviewOnly ? (
+          <aside className="invoice-tools w-full shrink-0 lg:sticky lg:top-6 lg:w-[240px]">
+            {dashboardScope === "project" ? (
+              <div>
+                <p className="px-2.5 pb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#184a96]">Project type</p>
+                <select
+                  value={projectCategory}
+                  onChange={(event) => chooseProjectCategory(event.target.value)}
+                  className="h-9 w-full rounded-md border border-slate-200 bg-white px-2.5 text-sm text-slate-700"
                 >
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-medium text-muted-foreground">Option</span>
-                    {paymentMethods.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => removePaymentMethod(pm.id)}
-                        aria-label="Remove payment method"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </div>
-                  <Input
-                    className="mb-2"
-                    value={pm.title}
-                    onChange={(e) => updatePaymentMethod(pm.id, { title: e.target.value })}
-                    placeholder="Label (e.g. CRDB, M-Pesa) — optional"
-                  />
-                  <Input
-                    className="mb-2"
-                    value={pm.accountName}
-                    onChange={(e) => updatePaymentMethod(pm.id, { accountName: e.target.value })}
-                    placeholder="Account name"
-                  />
-                  <Input
-                    className="mb-2"
-                    value={pm.bank}
-                    onChange={(e) => updatePaymentMethod(pm.id, { bank: e.target.value })}
-                    placeholder="Bank or provider"
-                  />
-                  <Input
-                    value={pm.account}
-                    onChange={(e) => updatePaymentMethod(pm.id, { account: e.target.value })}
-                    placeholder="Account or reference number"
-                  />
-                </div>
-              ))}
-            </div>
-              ) : null}
-            </div>
+                  <option value="">Not set</option>
+                  <option value="fyp">FYP projects</option>
+                  <option value="side">Side projects</option>
+                  <option value="research">Researches</option>
+                </select>
+              </div>
             ) : null}
 
-            <div className="space-y-2">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded-md border border-border/70 px-3 py-2 text-left"
-                onClick={() => toggleDetailSection("terms")}
-              >
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">{docLabels.termsSectionLabel}</span>
-                <ChevronDown className={cn("h-4 w-4 transition-transform", detailSectionVisible.terms && "rotate-180")} />
-              </button>
-              {detailSectionVisible.terms ? (
-                <>
-            <div>
-              <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>{docLabels.thankYouFieldLabel}</label>
-              <Input value={thankYouLine} onChange={(e) => setThankYouLine(e.target.value)} placeholder={docLabels.thankYouDefault} />
-            </div>
-            <div>
-              <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>{docLabels.termsFieldLabel}</label>
-              <p className={cn("mb-1 text-[11px]", themeClasses.textNeutralSecondary)}>Use Ctrl+B to wrap selected text in bold.</p>
+            <div className={cn(dashboardScope === "project" && "mt-8")}>
+              <p className="px-2.5 pb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#184a96]">Gemini</p>
               <Textarea
-                ref={termsTextareaRef}
-                value={termsText}
-                onChange={(e) => setTermsText(e.target.value)}
-                onKeyDown={handleTermsKeyDown}
-                rows={isQuotation ? 4 : 3}
-                placeholder={docLabels.termsDefault}
-                className="resize-y"
+                value={aiBrief}
+                onChange={(e) => setAiBrief(e.target.value)}
+                rows={5}
+                placeholder="Example: Niandikie invoice ya buck converter, 10 res, 10 cap, na wire mita 10."
+                className="resize-y border-slate-200 bg-white text-sm"
               />
-            </div>
-                </>
-              ) : null}
-            </div>
-
-            <div className="space-y-2">
               <button
                 type="button"
-                className="flex w-full items-center justify-between rounded-md border border-border/70 px-3 py-2 text-left"
-                onClick={() => toggleDetailSection("signer")}
+                onClick={fillInvoiceFromBrief}
+                disabled={isAiFilling || aiBrief.trim().length < 8}
+                className="mt-2 flex w-full items-center gap-2 rounded-md bg-[#184a96] px-2.5 py-2 text-left text-sm font-semibold text-white disabled:opacity-50"
               >
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">Signer</span>
-                <ChevronDown className={cn("h-4 w-4 transition-transform", detailSectionVisible.signer && "rotate-180")} />
+                <Sparkles className="h-4 w-4" />
+                {isAiFilling ? "Writing..." : "Fill invoice"}
               </button>
-              {detailSectionVisible.signer ? (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>
-                  {isDeliveryNote ? "Dispatched by (name on note)" : "Signer label (italic line, e.g. Authorized Signatory)"}
-                </label>
-                <Input value={signerName} onChange={(e) => setSignerName(e.target.value)} />
-              </div>
-              <div>
-                <label className={cn("mb-1 block text-xs font-medium", themeClasses.textNeutralSecondary)}>Title (e.g. Administrator)</label>
-                <Input value={signerTitle} onChange={(e) => setSignerTitle(e.target.value)} />
-              </div>
-            </div>
-              ) : null}
             </div>
 
-            {!isDeliveryNote ? (
-            <div className="space-y-2">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded-md border border-border/70 px-3 py-2 text-left"
-                onClick={() => toggleDetailSection("signatureStamp")}
-              >
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">Signature & stamp</span>
-                <ChevronDown className={cn("h-4 w-4 transition-transform", detailSectionVisible.signatureStamp && "rotate-180")} />
-              </button>
-              {detailSectionVisible.signatureStamp ? (
-                <>
-            <p className={cn("mt-2 text-xs font-semibold uppercase tracking-wide", themeClasses.textNeutralSecondary)}>
-              Digital signature & company stamp
-            </p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="rounded-lg border border-dashed border-border p-2">
-                <p className="mb-1.5 text-xs text-muted-foreground">
-                  Digital signature (shown above stamp in signature area)
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <input
-                    ref={signatureInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleSignatureUpload}
-                  />
-                  <Button type="button" size="sm" variant="outline" className="gap-1" onClick={() => signatureInputRef.current?.click()}>
-                    <ImagePlus className="h-3.5 w-3.5" />
-                    Upload signature
-                  </Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={clearSignature} disabled={!signatureImage}>
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    Clear
-                  </Button>
-                </div>
-                {signatureImage ? (
-                  <img src={signatureImage} alt="" className="mt-2 h-16 w-auto max-w-full object-contain" />
-                ) : null}
-              </div>
-              <div className="rounded-lg border border-dashed border-border p-2">
-                <p className="mb-1.5 text-xs text-muted-foreground">Company stamp (use PNG with transparent background; shown below signature)</p>
-                <div className="flex flex-wrap gap-2">
-                  <input ref={stampInputRef} type="file" accept="image/png,image/webp,image/*" className="hidden" onChange={handleStampUpload} />
-                  <Button type="button" size="sm" variant="outline" className="gap-1" onClick={() => stampInputRef.current?.click()}>
-                    <ImagePlus className="h-3.5 w-3.5" />
-                    Upload stamp
-                  </Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={clearStamp} disabled={!stampImage}>
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    Clear
-                  </Button>
-                </div>
-                {stampImage ? (
-                  <div className="mt-2 flex justify-center rounded-md bg-slate-100/80 p-2 dark:bg-slate-800/50">
-                    <img src={stampImage} alt="" className="h-32 w-auto max-w-full object-contain" />
-                  </div>
-                ) : null}
-              </div>
-            </div>
-                </>
-              ) : null}
-            </div>
-            ) : null}
-
-            <div className="space-y-2">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded-md border border-border/70 px-3 py-2 text-left"
-                onClick={() => toggleDetailSection("footer")}
-              >
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">Footer</span>
-                <ChevronDown className={cn("h-4 w-4 transition-transform", detailSectionVisible.footer && "rotate-180")} />
-              </button>
-              {detailSectionVisible.footer ? (
-                <>
-            <p className={cn("text-xs font-semibold uppercase tracking-wide", themeClasses.textNeutralSecondary)}>Footer contact (icons row)</p>
-            <div className="grid grid-cols-1 gap-2">
-              <Input value={footerPhone} onChange={(e) => setFooterPhone(e.target.value)} placeholder="Phone" />
-              <Input value={footerEmail} onChange={(e) => setFooterEmail(e.target.value)} placeholder="Email" />
-              <Input value={footerAddress} onChange={(e) => setFooterAddress(e.target.value)} placeholder="Address" />
-            </div>
-                </>
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
+          </aside>
         ) : null}
 
-        <Card key={savedInvoiceId || "new-invoice"} className={cn("print:shadow-none", isPreviewOnly ? "lg:col-span-12" : "lg:col-span-7", themeClasses.cardBg, themeClasses.cardBorder, "shadow-sm")}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Live preview</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <div key={savedInvoiceId || "new-invoice"} className="min-w-0 flex-1">
             <div
-              className={cn(
-                "relative overflow-hidden rounded-lg border text-slate-900",
-                isPreviewOnly && "mx-auto w-full max-w-4xl"
-              )}
+              className="relative mx-auto w-full max-w-[860px] overflow-hidden border text-slate-900"
               style={{
                 background: "#fff",
                 borderColor: "rgba(15, 23, 42, 0.22)",
@@ -2967,32 +2476,66 @@ export default function AdminInvoicesPage({
               {/* Header — logo and INVOICE both vertically centered with brand block */}
               <div className="flex flex-col justify-between gap-4 px-6 pb-0 pt-6 sm:flex-row sm:items-center">
                 <div className="flex max-w-[58%] items-center gap-3 sm:gap-4">
-                  {invoiceLogo ? (
-                    <img
-                      src={invoiceLogo}
-                      alt=""
-                      className="h-[72px] w-auto max-w-[128px] shrink-0 object-contain"
+                  <div className="shrink-0">
+                    {invoiceLogo ? (
+                      <img
+                        src={invoiceLogo}
+                        alt=""
+                        className="h-[72px] w-auto max-w-[128px] object-contain"
+                      />
+                    ) : (
+                      <div
+                        className="flex h-[72px] w-[72px] items-center justify-center rounded-full border-2 border-dashed text-[10px] text-slate-400"
+                        style={{ borderColor: "#cbd5e1" }}
+                      >
+                        Logo
+                      </div>
+                    )}
+                    {!isPreviewOnly ? (
+                      <div className="sheet-only-screen mt-1 flex gap-2">
+                        <input
+                          ref={logoInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleLogoUpload}
+                        />
+                        <button type="button" className="text-[10px] font-semibold text-[#184a96]" onClick={() => logoInputRef.current?.click()}>
+                          {invoiceLogo ? "Change logo" : "Upload logo"}
+                        </button>
+                        {invoiceLogo ? (
+                          <button type="button" className="text-[10px] font-semibold text-slate-500" onClick={clearLogo}>
+                            Clear
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <SheetField
+                      editable={!isPreviewOnly}
+                      value={fromName}
+                      onChange={setFromName}
+                      placeholder="Your company"
+                      className="text-lg font-extrabold leading-tight tracking-tight text-slate-900"
                     />
-                  ) : (
-                    <div
-                      className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-full border-2 border-dashed text-[10px] text-slate-400"
-                      style={{ borderColor: "#cbd5e1" }}
-                    >
-                      Logo
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <p className="text-lg font-extrabold leading-tight tracking-tight text-slate-900">
-                      {fromName || "Your company"}
-                    </p>
-                    <p className="mt-0.5 text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-700 dark:text-slate-300">
-                      {companyTagline}
-                    </p>
-                    {fromAddress.trim() ? (
+                    <SheetField
+                      editable={!isPreviewOnly}
+                      value={companyTagline}
+                      onChange={setCompanyTagline}
+                      placeholder="Tagline"
+                      className="mt-0.5 text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-700"
+                    />
+                    {!isPreviewOnly || fromAddress.trim() ? (
                       <div className="mt-2 border-l-2 border-slate-200 pl-2.5">
-                        <p className="whitespace-pre-line text-[10px] leading-[1.55] text-slate-500">
-                          {fromAddress.trim()}
-                        </p>
+                        <SheetField
+                          editable={!isPreviewOnly}
+                          value={fromAddress}
+                          onChange={setFromAddress}
+                          multiline
+                          placeholder="Office address"
+                          className="text-[10px] leading-[1.55] text-slate-500"
+                        />
                       </div>
                     ) : null}
                   </div>
@@ -3018,11 +2561,21 @@ export default function AdminInvoicesPage({
 
               {/* Website sits on the divider line (not under INVOICE title) */}
               <div className="relative mt-2.5 px-6">
-                <p className="pb-1 text-right text-[9px] font-semibold normal-case leading-none tracking-normal text-slate-600 sm:text-[10px]">
-                  <a href={websiteHref} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                    {websiteDisplay}
-                  </a>
-                </p>
+                <div className="pb-1 text-right text-[9px] font-semibold normal-case leading-none tracking-normal text-slate-600 sm:text-[10px]">
+                  {isPreviewOnly ? (
+                    <a href={websiteHref} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                      {websiteDisplay}
+                    </a>
+                  ) : (
+                    <SheetField
+                      editable
+                      value={companyWebsite}
+                      onChange={setCompanyWebsite}
+                      placeholder="website"
+                      className="text-right text-[9px] font-semibold text-slate-600 sm:text-[10px]"
+                    />
+                  )}
+                </div>
                 <div className="h-px w-full" style={{ background: INV.lineGray }} />
                 <div className="absolute bottom-0 left-6 h-[3px] w-24" style={{ background: INV.blue }} />
               </div>
@@ -3031,23 +2584,89 @@ export default function AdminInvoicesPage({
               <div className="mt-4 grid grid-cols-1 gap-6 px-6 sm:grid-cols-2">
                 <div>
                   <p className="text-xs font-bold text-slate-900">{docLabels.billToLabel}</p>
-                  <p className="mt-1 text-[15px] font-extrabold text-slate-900">{billToName || "Client name"}</p>
-                  {isQuotation && quotationScope.trim() ? (
-                    <p className="mt-1.5 text-xs leading-relaxed text-slate-600">{quotationScope.trim()}</p>
+                  <SheetField
+                    editable={!isPreviewOnly}
+                    value={billToName}
+                    onChange={setBillToName}
+                    placeholder="Client name"
+                    className="mt-1 text-[15px] font-extrabold text-slate-900"
+                  />
+                  {isQuotation && (!isPreviewOnly || quotationScope.trim()) ? (
+                    <SheetField
+                      editable={!isPreviewOnly}
+                      value={quotationScope}
+                      onChange={setQuotationScope}
+                      multiline
+                      placeholder="What this quotation covers"
+                      className="mt-1.5 text-xs leading-relaxed text-slate-600"
+                    />
                   ) : null}
-                  {billToAddress && <p className="mt-0.5 whitespace-pre-line text-xs text-slate-500">{billToAddress}</p>}
-                  {billToEmail && <p className="text-xs text-slate-500">{billToEmail}</p>}
-                  {billToPhone && <p className="mt-0.5 text-xs text-slate-500">{billToPhone}</p>}
+                  {!isPreviewOnly || billToAddress.trim() ? (
+                    <SheetField
+                      editable={!isPreviewOnly}
+                      value={billToAddress}
+                      onChange={setBillToAddress}
+                      multiline
+                      placeholder="Client address"
+                      className="mt-0.5 text-xs text-slate-500"
+                    />
+                  ) : null}
+                  {!isPreviewOnly || billToEmail.trim() ? (
+                    <SheetField
+                      editable={!isPreviewOnly}
+                      value={billToEmail}
+                      onChange={setBillToEmail}
+                      placeholder="Client email"
+                      className="text-xs text-slate-500"
+                    />
+                  ) : null}
+                  {!isPreviewOnly || billToPhone.trim() ? (
+                    <SheetField
+                      editable={!isPreviewOnly}
+                      value={billToPhone}
+                      onChange={setBillToPhone}
+                      placeholder="Client phone"
+                      className="mt-0.5 text-xs text-slate-500"
+                    />
+                  ) : null}
                 </div>
                 <div className="text-left sm:text-right">
-                  <p className="text-sm font-extrabold text-slate-900">{docLabels.numberLabel} {invoiceNumber}</p>
-                  {!isDeliveryNote && docLabels.referenceLabel && referenceNumber.trim() ? (
-                    <p className="mt-0.5 text-sm font-semibold text-slate-900">
-                      {docLabels.referenceLabel} {referenceNumber.trim()}
+                  <p className="flex flex-wrap items-baseline justify-end gap-1 text-sm font-extrabold text-slate-900">
+                    <span>{docLabels.numberLabel}</span>
+                    <span>{invoiceNumber || "—"}</span>
+                  </p>
+                  {!isDeliveryNote && docLabels.referenceLabel && (!isPreviewOnly || referenceNumber.trim()) ? (
+                    <p className="mt-0.5 flex flex-wrap items-baseline justify-end gap-1 text-sm font-semibold text-slate-900">
+                      <span>{docLabels.referenceLabel}</span>
+                      <span>{referenceNumber || "—"}</span>
                     </p>
                   ) : null}
-                  <p className="mt-1 text-sm text-slate-900">{docLabels.issueDateLabel} {formatLongDate(issueDate)}</p>
-                  <p className="mt-0.5 text-xs text-slate-500">{docLabels.dueLabel} {formatLongDate(dueDate)}</p>
+                  <p className="mt-1 flex flex-wrap items-center justify-end gap-1 text-sm text-slate-900">
+                    <span>{docLabels.issueDateLabel}</span>
+                    {isPreviewOnly ? (
+                      formatLongDate(issueDate)
+                    ) : (
+                      <input
+                        type="date"
+                        value={issueDate}
+                        onChange={(e) => handleIssueDateChange(e.target.value)}
+                        className="sheet-field border-0 bg-transparent text-right text-sm text-slate-900 outline-none focus:bg-sky-50"
+                      />
+                    )}
+                  </p>
+                  <p className="mt-0.5 flex flex-wrap items-center justify-end gap-1 text-xs text-slate-500">
+                    <span>{docLabels.dueLabel}</span>
+                    {isPreviewOnly ? (
+                      formatLongDate(dueDate)
+                    ) : (
+                      <input
+                        type="date"
+                        value={dueDate}
+                        onChange={(e) => setDueDate(e.target.value)}
+                        className="sheet-field border-0 bg-transparent text-right text-xs text-slate-500 outline-none focus:bg-sky-50"
+                      />
+                    )}
+                  </p>
                   {isDeliveryNote && referenceNumber.trim() ? (
                     <p className="mt-0.5 text-xs text-slate-500">{docLabels.referenceLabel} {referenceNumber.trim()}</p>
                   ) : null}
@@ -3056,10 +2675,14 @@ export default function AdminInvoicesPage({
 
               {!hasProjectTables ? (
                 <div className="mt-5 px-6">
-                  {itemsTableTitle.trim() ? (
-                    <p className="mb-2 text-[11px] font-extrabold uppercase leading-relaxed tracking-[0.06em] text-slate-900">
-                      {itemsTableTitle.trim()}
-                    </p>
+                  {!isPreviewOnly || itemsTableTitle.trim() ? (
+                    <SheetField
+                      editable={!isPreviewOnly}
+                      value={itemsTableTitle}
+                      onChange={setItemsTableTitle}
+                      placeholder="Table heading"
+                      className="mb-2 text-[11px] font-extrabold uppercase leading-relaxed tracking-[0.06em] text-slate-900"
+                    />
                   ) : null}
                 <div className="overflow-x-auto border border-slate-300">
                   <table className="w-full table-fixed border-collapse">
@@ -3105,13 +2728,51 @@ export default function AdminInvoicesPage({
                               {index + 1}
                             </td>
                             <td className="border border-slate-200 px-2.5 py-2.5 text-sm font-medium text-slate-900 sm:px-3.5">
-                              {item.description || "—"}
+                              <div className="flex items-start gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <SheetField
+                                    editable={!isPreviewOnly}
+                                    value={item.description}
+                                    onChange={(value) => updateItem(item.id, { description: value })}
+                                    placeholder="Description"
+                                    className="text-sm font-medium text-slate-900"
+                                  />
+                                </div>
+                                {!isPreviewOnly ? (
+                                  <button
+                                    type="button"
+                                    className="sheet-only-screen shrink-0 text-[10px] font-semibold text-red-600"
+                                    onClick={() => removeItem(item.id)}
+                                  >
+                                    Remove
+                                  </button>
+                                ) : null}
+                              </div>
                             </td>
                             <td className="border border-slate-200 px-2.5 py-2.5 text-right text-sm text-slate-700 sm:px-3.5">
-                              {item.quantity}
+                              {isPreviewOnly ? (
+                                item.quantity
+                              ) : (
+                                <input
+                                  value={String(item.quantity)}
+                                  inputMode="decimal"
+                                  onChange={(e) => updateItem(item.id, { quantity: parseQtyInput(e.target.value) })}
+                                  className="sheet-field w-full border-0 bg-transparent text-right text-sm text-slate-700 outline-none focus:bg-sky-50"
+                                />
+                              )}
                             </td>
                             <td className="border border-slate-200 px-2.5 py-2.5 text-right text-sm tabular-nums text-slate-700 sm:px-3.5">
-                              {money(item.unitPrice)}
+                              {isPreviewOnly ? (
+                                money(item.unitPrice)
+                              ) : (
+                                <input
+                                  value={item.unitPrice ? String(item.unitPrice) : ""}
+                                  inputMode="decimal"
+                                  placeholder="0"
+                                  onChange={(e) => updateItem(item.id, { unitPrice: parseMoneyInput(e.target.value) })}
+                                  className="sheet-field w-full border-0 bg-transparent text-right text-sm tabular-nums text-slate-700 outline-none focus:bg-sky-50"
+                                />
+                              )}
                             </td>
                             <td className="border border-slate-200 px-2.5 py-2.5 text-right text-sm font-semibold tabular-nums text-slate-900 sm:px-3.5">
                               {money(rowTotal)}
@@ -3130,10 +2791,16 @@ export default function AdminInvoicesPage({
                     </tbody>
                   </table>
                 </div>
+                {!isPreviewOnly ? (
+                  <button type="button" className="sheet-only-screen mt-2 text-xs font-semibold text-[#184a96]" onClick={addItem}>
+                    Add line
+                  </button>
+                ) : null}
                 </div>
               ) : null}
 
-              {visibleProjectSections(projectTables?.sections).map((section) => {
+              {(projectTables?.sections || []).map((section, sectionIndex) => {
+                if (!isProjectSectionVisible(section)) return null
                 const prototypeSection = isPrototypeSectionTitle(section.title)
                 const previewCols = isDeliveryNote ? deliveryNoteColumns(section.columns) : section.columns
                 return (
@@ -3175,8 +2842,47 @@ export default function AdminInvoicesPage({
                               >
                                 {col.key === "mark" ? (
                                   <span className="inline-flex h-3.5 w-3.5 border border-slate-600" />
+                                ) : isPreviewOnly || isSerialColumnKey(col.key) || (canAutoLineTotal(section) && lineTotalColumnKey(section) === col.key) ? (
+                                  <span className="tabular-nums">{displayProjectTableCell(row, col, index, currency, section)}</span>
                                 ) : (
-                                  displayProjectTableCell(row, col, index, currency)
+                                  <div>
+                                    <div className={col.key === "item" ? "flex items-start gap-2" : undefined}>
+                                      <div className={col.key === "item" ? "min-w-0 flex-1" : undefined}>
+                                        <SheetField
+                                          editable
+                                          value={sheetCellValue(row[col.key] ?? "")}
+                                          onChange={(value) => updateProjectSectionCell(sectionIndex, index, col.key, value)}
+                                          placeholder={sheetCellPlaceholder(row[col.key] ?? "", col.label)}
+                                          inputMode={col.key === "qty" || col.key === "unitPrice" ? "decimal" : "text"}
+                                          className={cn(
+                                            "text-xs",
+                                            col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left",
+                                            prototypeSection && isPrototypeRowHighlighted(row) ? "text-red-700" : "text-slate-800"
+                                          )}
+                                        />
+                                      </div>
+                                      {col.key === "item" && !isPreviewOnly ? (
+                                        <button
+                                          type="button"
+                                          className="sheet-only-screen shrink-0 text-[10px] font-semibold text-red-600"
+                                          onClick={() => removeProjectSectionRow(sectionIndex, index)}
+                                        >
+                                          Remove
+                                        </button>
+                                      ) : null}
+                                    </div>
+                                    {prototypeSection && col.key === "item" && !isPreviewOnly ? (
+                                      <label className="sheet-only-screen mt-1 inline-flex items-center gap-1 text-[10px] text-slate-500">
+                                        <input
+                                          type="checkbox"
+                                          checked={isPrototypeRowHighlighted(row)}
+                                          onChange={(e) => togglePrototypeSectionRowHighlight(sectionIndex, index, e.target.checked)}
+                                          className="h-3 w-3 rounded border-slate-300"
+                                        />
+                                        Price unknown
+                                      </label>
+                                    ) : null}
+                                  </div>
                                 )}
                               </td>
                             ))}
@@ -3193,14 +2899,30 @@ export default function AdminInvoicesPage({
                       </tbody>
                     </table>
                   </div>
+                  {!isPreviewOnly ? (
+                    <button
+                      type="button"
+                      className="sheet-only-screen mt-2 text-xs font-semibold text-[#184a96]"
+                      onClick={() => addProjectSectionRow(sectionIndex)}
+                    >
+                      Add line
+                    </button>
+                  ) : null}
                 </div>
                 )
               })}
 
-              {isDeliveryNote && backorderedNote.trim() ? (
+              {isDeliveryNote && (!isPreviewOnly || backorderedNote.trim()) ? (
                 <div className="mt-3 px-6">
                   <p className="mb-1 text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-900">Missing / backordered items</p>
-                  <p className="whitespace-pre-line text-xs text-slate-600">{backorderedNote.trim()}</p>
+                  <SheetField
+                    editable={!isPreviewOnly}
+                    multiline
+                    value={backorderedNote}
+                    onChange={setBackorderedNote}
+                    placeholder="Items still missing"
+                    className="text-xs text-slate-600"
+                  />
                 </div>
               ) : null}
 
@@ -3300,22 +3022,44 @@ export default function AdminInvoicesPage({
                           key={pm.id}
                           className={cn(index > 0 && "border-t border-slate-200 pt-3 dark:border-slate-600")}
                         >
-                          {pm.title.trim() ? (
-                            <p className="mb-2 text-[10px] font-extrabold uppercase tracking-wide text-slate-700 dark:text-slate-300">
-                              {pm.title.trim()}
-                            </p>
+                          {!isPreviewOnly || pm.title.trim() ? (
+                            <SheetField
+                              editable={!isPreviewOnly}
+                              value={pm.title}
+                              onChange={(value) => updatePaymentMethod(pm.id, { title: value })}
+                              placeholder="Payment label"
+                              className="mb-2 text-[10px] font-extrabold uppercase tracking-wide text-slate-700"
+                            />
                           ) : null}
                           <div>
                             <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Account name</span>
-                            <span className="font-bold text-slate-900">{pm.accountName || "—"}</span>
+                            <SheetField
+                              editable={!isPreviewOnly}
+                              value={pm.accountName}
+                              onChange={(value) => updatePaymentMethod(pm.id, { accountName: value })}
+                              placeholder="Account name"
+                              className="font-bold text-slate-900"
+                            />
                           </div>
                           <div className="mt-1.5">
                             <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Bank</span>
-                            <span className="font-bold text-slate-900">{pm.bank || "—"}</span>
+                            <SheetField
+                              editable={!isPreviewOnly}
+                              value={pm.bank}
+                              onChange={(value) => updatePaymentMethod(pm.id, { bank: value })}
+                              placeholder="Bank"
+                              className="font-bold text-slate-900"
+                            />
                           </div>
                           <div className="mt-1.5">
                             <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Account</span>
-                            <span className="font-bold text-slate-900">{pm.account || "—"}</span>
+                            <SheetField
+                              editable={!isPreviewOnly}
+                              value={pm.account}
+                              onChange={(value) => updatePaymentMethod(pm.id, { account: value })}
+                              placeholder="Account number"
+                              className="font-bold text-slate-900"
+                            />
                           </div>
                         </div>
                       ))}
@@ -3328,35 +3072,96 @@ export default function AdminInvoicesPage({
               {/* Terms + signature */}
               <div className="mt-2 grid grid-cols-1 gap-6 border-t border-slate-100 px-6 py-5 sm:grid-cols-[1fr_auto]">
                 <div className="text-xs leading-relaxed text-slate-600">
-                  <p className="font-extrabold text-slate-900">{effectiveThankYou}</p>
+                  {isPreviewOnly ? (
+                    <p className="font-extrabold text-slate-900">{effectiveThankYou}</p>
+                  ) : (
+                    <SheetField
+                      editable
+                      value={thankYouLine}
+                      onChange={setThankYouLine}
+                      placeholder="Thank you line"
+                      className="font-extrabold text-slate-900"
+                    />
+                  )}
                   <h4 className="mt-3 text-xs font-extrabold text-slate-900">{docLabels.termsHeading}</h4>
-                  <p
-                    className="mt-1 whitespace-pre-line"
-                    dangerouslySetInnerHTML={{ __html: convertInlineBoldToHtml(effectiveTerms || "—") }}
-                  />
+                  {isPreviewOnly ? (
+                    <p
+                      className="mt-1 whitespace-pre-line"
+                      dangerouslySetInnerHTML={{ __html: convertInlineBoldToHtml(effectiveTerms || "—") }}
+                    />
+                  ) : (
+                    <SheetField
+                      editable
+                      multiline
+                      value={termsText}
+                      onChange={setTermsText}
+                      placeholder="Notes and terms. Use **bold** around words."
+                      className="mt-1 text-xs leading-relaxed text-slate-600"
+                    />
+                  )}
                 </div>
                 <div className="w-full max-w-[280px] text-left sm:ml-auto sm:text-right">
                   {isDeliveryNote ? (
                     <p className="text-xs text-slate-600">Dispatched by: <span className="font-semibold text-slate-900">{signerName}</span></p>
                   ) : (
                   <>
-                  <p
-                    className="font-['Georgia',serif] text-lg italic text-slate-700"
-                  >
-                    {signerName}
-                  </p>
+                  <SheetField
+                    editable={!isPreviewOnly}
+                    value={signerName}
+                    onChange={setSignerName}
+                    placeholder="Signer name"
+                    className="font-['Georgia',serif] text-lg italic text-slate-700 sm:text-right"
+                  />
+                  <SheetField
+                    editable={!isPreviewOnly}
+                    value={signerTitle}
+                    onChange={setSignerTitle}
+                    placeholder="Name"
+                    className="mt-1 text-xs font-semibold text-slate-800 sm:text-right"
+                  />
                   {signatureImage ? (
                     <div className="mt-2 flex justify-end">
                       <img src={signatureImage} alt="" className="block h-16 w-auto max-w-[170px] object-contain" />
                     </div>
                   ) : null}
-                  <p className="mt-2 text-xs text-slate-500">{signerTitle}</p>
+                  {!isPreviewOnly ? (
+                    <div className="sheet-only-screen mt-1 flex justify-end gap-2">
+                      <input
+                        ref={signatureInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleSignatureUpload}
+                      />
+                      <button type="button" className="text-[10px] font-semibold text-[#184a96]" onClick={() => signatureInputRef.current?.click()}>
+                        {signatureImage ? "Change signature" : "Upload signature"}
+                      </button>
+                      {signatureImage ? (
+                        <button type="button" className="text-[10px] font-semibold text-slate-500" onClick={clearSignature}>
+                          Clear
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {stampImage ? (
                     <img
                       src={stampImage}
                       alt=""
                       className="ml-auto mt-2 block h-36 w-auto max-w-[280px] object-contain opacity-95"
                     />
+                  ) : null}
+                  {!isPreviewOnly ? (
+                    <div className="sheet-only-screen mt-1 flex justify-end gap-2">
+                      <input ref={stampInputRef} type="file" accept="image/png,image/webp,image/*" className="hidden" onChange={handleStampUpload} />
+                      <button type="button" className="text-[10px] font-semibold text-[#184a96]" onClick={() => stampInputRef.current?.click()}>
+                        {stampImage ? "Change stamp" : "Upload stamp"}
+                      </button>
+                      {stampImage ? (
+                        <button type="button" className="text-[10px] font-semibold text-slate-500" onClick={clearStamp}>
+                          Clear
+                        </button>
+                      ) : null}
+                    </div>
                   ) : null}
                   </>
                   )}
@@ -3383,7 +3188,18 @@ export default function AdminInvoicesPage({
                 </div>
               </div>
 
-              {!isQuotation && !isDeliveryNote ? (
+              {!isQuotation && !isDeliveryNote && !isPreviewOnly ? (
+                <label className="sheet-only-screen flex items-center gap-2 px-6 pt-4 text-xs text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={showClientApproval}
+                    onChange={(event) => setShowClientApproval(event.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-slate-300"
+                  />
+                  Show client approval — sign & stamp
+                </label>
+              ) : null}
+              {!isQuotation && !isDeliveryNote && showClientApproval ? (
                 <div className="border-t border-slate-200 px-6 py-4">
                   <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-slate-900">
                     {docLabels.acceptanceHeading}
@@ -3421,7 +3237,13 @@ export default function AdminInvoicesPage({
                     >
                       <Phone className="h-3.5 w-3.5" />
                     </span>
-                    {footerPhone}
+                    <SheetField
+                      editable={!isPreviewOnly}
+                      value={footerPhone}
+                      onChange={setFooterPhone}
+                      placeholder="Phone"
+                      className="text-xs text-slate-600"
+                    />
                   </div>
                   <div className="flex items-center gap-2 text-xs text-slate-600">
                     <span
@@ -3430,7 +3252,13 @@ export default function AdminInvoicesPage({
                     >
                       <Mail className="h-3.5 w-3.5" />
                     </span>
-                    {footerEmail}
+                    <SheetField
+                      editable={!isPreviewOnly}
+                      value={footerEmail}
+                      onChange={setFooterEmail}
+                      placeholder="Email"
+                      className="text-xs text-slate-600"
+                    />
                   </div>
                   <div className="flex min-w-0 items-start gap-2 text-xs text-slate-600">
                     <span
@@ -3439,7 +3267,14 @@ export default function AdminInvoicesPage({
                     >
                       <MapPin className="h-3.5 w-3.5" />
                     </span>
-                    <span className="break-words pt-0.5">{footerAddress}</span>
+                    <SheetField
+                      editable={!isPreviewOnly}
+                      value={footerAddress}
+                      onChange={setFooterAddress}
+                      multiline
+                      placeholder="Address"
+                      className="break-words pt-0.5 text-xs text-slate-600"
+                    />
                   </div>
                 </div>
                 {isQuotation ? (
@@ -3450,9 +3285,9 @@ export default function AdminInvoicesPage({
               </div>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
-    </div>
+      </div>
   )
 }

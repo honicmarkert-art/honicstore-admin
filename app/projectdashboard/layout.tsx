@@ -4,11 +4,12 @@ import type { ReactNode } from "react"
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { LayoutDashboard, ReceiptText, ArrowLeft, ListOrdered, PanelLeftClose, PanelLeftOpen, ChartNoAxesCombined } from "lucide-react"
+import { LayoutDashboard, ReceiptText, ArrowLeft, ListOrdered, PanelLeftClose, PanelLeftOpen, ChartNoAxesCombined, FolderKanban, Store } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useTheme } from "@/hooks/use-theme"
-import { Button } from "@/components/ui/button"
 import { useAuth } from "@/contexts/auth-context"
+import { ProjectYearProvider, useProjectYear } from "@/contexts/project-year-context"
+import { projectYearLabel, projectYearSpan } from "@/lib/project-year"
 
 type ProjectDashboardLayoutProps = {
   children: ReactNode
@@ -16,6 +17,7 @@ type ProjectDashboardLayoutProps = {
 
 const projectNav = [
   { name: "Overview", href: "/projectdashboard", icon: LayoutDashboard },
+  { name: "Categories", href: "/projectdashboard/categories", icon: FolderKanban },
   { name: "Usage Tracking", href: "/projectdashboard/usage", icon: ChartNoAxesCombined },
   { name: "Invoice", href: "/projectdashboard/invoice", icon: ReceiptText },
   { name: "Invoice List", href: "/projectdashboard/invoices/list", icon: ListOrdered },
@@ -27,8 +29,7 @@ export default function ProjectDashboardLayout({ children }: ProjectDashboardLay
   const pathname = usePathname()
   const router = useRouter()
   const { themeClasses } = useTheme()
-  const { loading, isAuthenticated, isAdmin } = useAuth()
-  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`)
+  const { loading, isAuthenticated, isAdmin, user } = useAuth()
   const [navExpanded, setNavExpanded] = useState(true)
 
   const handleBack = () => {
@@ -60,29 +61,100 @@ export default function ProjectDashboardLayout({ children }: ProjectDashboardLay
   if (!isAuthenticated || !isAdmin) return null
 
   return (
-    <div className={cn("min-h-screen", themeClasses.mainBg)}>
-      <div className={cn("grid min-h-screen grid-cols-1", navExpanded && "md:grid-cols-[260px_1fr]")}>
+    <ProjectYearProvider>
+      <ProjectDashboardShell navExpanded={navExpanded} setNavExpanded={setNavExpanded} handleBack={handleBack} userEmail={user?.email || ""}>
+        {children}
+      </ProjectDashboardShell>
+    </ProjectYearProvider>
+  )
+}
+
+function ProjectYearSelect() {
+  const projectYear = useProjectYear()
+  if (!projectYear) return null
+  return (
+    <label className="flex shrink-0 items-center gap-1.5 text-sm text-slate-600">
+      <span className="hidden md:inline">Year</span>
+      <select
+        value={projectYear.year}
+        onChange={(event) => projectYear.setYear(Number(event.target.value))}
+        aria-label={projectYearSpan(projectYear.year)}
+        title={projectYearLabel(projectYear.year)}
+        className="h-8 min-w-[8.5rem] rounded-md border border-slate-200 bg-white px-2 text-sm font-semibold text-[#184a96]"
+      >
+        {projectYear.years.map((year) => (
+          <option key={year} value={year}>
+            {projectYearSpan(year)}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function ProjectDashboardShell({
+  children,
+  navExpanded,
+  setNavExpanded,
+  handleBack,
+  userEmail,
+}: {
+  children: ReactNode
+  navExpanded: boolean
+  setNavExpanded: (value: boolean | ((open: boolean) => boolean)) => void
+  handleBack: () => void
+  userEmail: string
+}) {
+  const pathname = usePathname()
+  const { themeClasses } = useTheme()
+  const isActive = (href: string) => (href === "/projectdashboard" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`))
+
+  return (
+    <div className={cn("flex min-h-screen flex-col", themeClasses.mainBg)}>
+      <header className={cn("sticky top-0 z-40 flex h-14 items-center gap-3 border-b px-3 sm:px-4", themeClasses.cardBg, themeClasses.cardBorder)}>
+        <button
+          type="button"
+          className="rounded-md p-2 text-slate-600 hover:bg-slate-100"
+          onClick={() => setNavExpanded((open) => !open)}
+          aria-label={navExpanded ? "Hide menu" : "Show menu"}
+        >
+          {navExpanded ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+        </button>
+        <Link href="/projectdashboard" className="shrink-0 text-sm font-semibold text-[#184a96]">
+          Honic Projects
+        </Link>
+        <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {projectNav.map((item) => {
+            const active = isActive(item.href)
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "shrink-0 rounded-md px-2.5 py-1.5 text-sm",
+                  active ? "bg-[#184a96] font-semibold text-white" : "text-slate-600 hover:bg-slate-100"
+                )}
+              >
+                {item.name}
+              </Link>
+            )
+          })}
+        </nav>
+        <ProjectYearSelect />
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          {userEmail ? <span className="hidden max-w-[200px] truncate text-xs text-slate-500 sm:inline">{userEmail}</span> : null}
+          <Link href="/dashboard" className="inline-flex items-center gap-1.5 rounded-md bg-[#184a96] px-2.5 py-1.5 text-sm font-medium text-white hover:bg-[#123a78]">
+            <Store className="h-4 w-4" />
+            <span className="hidden sm:inline">Store dashboard</span>
+            <span className="sm:hidden">Store</span>
+          </Link>
+        </div>
+      </header>
+      <div className={cn("grid min-h-0 flex-1 grid-cols-1", navExpanded && "md:grid-cols-[220px_1fr]")}>
         {navExpanded ? (
-        <aside className={cn("flex max-h-screen flex-col overflow-hidden border-r p-4 md:sticky md:top-0 md:h-screen md:p-5", themeClasses.cardBg, themeClasses.cardBorder)}>
-          <div className="mb-4 shrink-0">
-            <div className="flex gap-2">
-              <Button type="button" variant="outline" className="flex-1 justify-start gap-2 rounded-2xl" onClick={handleBack}>
-                <ArrowLeft className="h-4 w-4" />
-                Back
-              </Button>
-              <Button type="button" variant="outline" size="icon" className="rounded-2xl" onClick={() => setNavExpanded(false)} aria-label="Collapse sidebar">
-                <PanelLeftClose className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-
-          <div className="mb-6 shrink-0 rounded-2xl border bg-muted/30 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-600 dark:text-blue-300">Project</p>
-            <h2 className="mt-1 text-lg font-bold">Financial Workspace</h2>
-            <p className="mt-1 text-xs text-muted-foreground">Sidebar navigation only</p>
-          </div>
-
-          <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        <aside className={cn("flex max-h-screen flex-col overflow-hidden border-r px-4 py-5 md:sticky md:top-14 md:h-[calc(100vh-3.5rem)]", themeClasses.cardBg, themeClasses.cardBorder)}>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#184a96]">Menu</p>
+          <nav className="mt-4 min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {projectNav.map((item) => {
               const Icon = item.icon
               const active = isActive(item.href)
@@ -91,48 +163,32 @@ export default function ProjectDashboardLayout({ children }: ProjectDashboardLay
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "group flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold transition-all",
-                    active
-                      ? "bg-blue-600 text-white shadow-sm hover:bg-blue-600/90"
-                      : "border border-transparent bg-muted/25 text-muted-foreground hover:border-border/80 hover:bg-muted/45"
+                    "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm",
+                    active ? "bg-[#184a96] font-semibold text-white" : "text-slate-600 hover:bg-slate-100"
                   )}
                 >
-                  <span
-                    className={cn(
-                      "inline-flex h-10 w-10 items-center justify-center rounded-2xl transition-colors",
-                      active ? "bg-white/15" : "bg-muted/40 group-hover:bg-muted/55"
-                    )}
-                  >
-                    <Icon className={cn("h-5 w-5", active ? "text-white" : "text-muted-foreground")} />
-                  </span>
+                  <Icon className="h-4 w-4 shrink-0" />
                   <span className="truncate">{item.name}</span>
-                  {active ? <span className="ml-auto h-2 w-2 rounded-full bg-white/90" aria-hidden /> : null}
                 </Link>
               )
             })}
           </nav>
 
-          <div className="mt-6 shrink-0 border-t pt-4">
-            <Button asChild variant="outline" className="w-full justify-start gap-2 rounded-2xl">
-              <Link href="/dashboard">
-                <ArrowLeft className="h-4 w-4" />
-                Back to Admin Dashboard
-              </Link>
-            </Button>
+          <div className="mt-4 space-y-1 border-t pt-4">
+            <button type="button" className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-slate-600 hover:bg-slate-100" onClick={handleBack}>
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </button>
+            <Link href="/dashboard" className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm font-medium text-[#184a96] hover:bg-slate-100">
+              <Store className="h-4 w-4" />
+              Store dashboard
+            </Link>
           </div>
         </aside>
         ) : null}
 
         <main className="min-w-0">
-          {!navExpanded ? (
-            <section className="px-4 pt-4 md:px-6 md:pt-6">
-              <Button type="button" variant="outline" className="gap-2 rounded-2xl" onClick={() => setNavExpanded(true)}>
-                <PanelLeftOpen className="h-4 w-4" />
-                Show sidebar
-              </Button>
-            </section>
-          ) : null}
-          <section className="p-4 md:p-6">{children}</section>
+          <section className="px-4 py-6 md:px-8 md:py-8">{children}</section>
         </main>
       </div>
     </div>

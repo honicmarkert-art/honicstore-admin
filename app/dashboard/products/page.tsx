@@ -46,6 +46,19 @@ import { useToast } from "@/hooks/use-toast"
 import { ProductForm } from "./product-form"
 import { SecurityGuard } from "@/components/security-guard"
 
+function productImageSrc(src: string | null | undefined): string | null {
+  const value = (src || "").trim()
+  if (!value || value === "null" || value === "undefined") return null
+  if (value.startsWith("/") || value.startsWith("data:") || value.startsWith("blob:")) return value
+  try {
+    const url = new URL(value)
+    if (url.protocol === "http:" || url.protocol === "https:") return value
+  } catch {
+    return null
+  }
+  return null
+}
+
 export default function AdminProducts() {
   return (
     <SecurityGuard requireAuth={true} requireAdmin={true}>
@@ -657,14 +670,15 @@ function AdminProductsContent() {
               <tbody>
                 {filteredProducts.map((product, idx) => {
                   const productNumber = idx + 1
+                  const imageSrc = productImageSrc(product.image)
                   return (
                     <tr key={product.id} className={cn("border-b", themeClasses.cardBorder)}>
                     <td className="py-3 px-4 align-top">{productNumber}</td>
                     <td className="py-3 px-4">
                       <div className="flex items-center space-x-3">
-                        {product.image ? (
+                        {imageSrc ? (
                           <Image
-                            src={product.image}
+                            src={imageSrc}
                             alt={product.name}
                             width={40}
                             height={40}

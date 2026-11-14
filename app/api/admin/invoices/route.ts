@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { validateAdminAccess, createAdminSupabaseClient } from "@/lib/admin-auth"
+import { parseProjectYear, projectYearOrFilter, recordInProjectYear } from "@/lib/project-year"
+import { generateNextInvoiceNumber, nextReferences, referenceForCategory } from "@/lib/invoice-sequence"
 import { z } from "zod"
 
 export const dynamic = "force-dynamic"
@@ -22,30 +24,6 @@ const saveInvoiceSchema = z.object({
     })
     .default({ subtotal: 0, taxAmount: 0, grandTotal: 0 }),
 })
-
-async function generateNextInvoiceNumber(supabase: any, documentKind?: string): Promise<string> {
-  const { data, error } = await supabase
-    .from(INVOICES_TABLE)
-    .select("invoice_number")
-    .order("created_at", { ascending: false })
-    .limit(2000)
-  if (error) throw new Error(error.message)
-
-  const year = new Date().getFullYear()
-  const isTechReport = documentKind === "technical_report"
-  const pattern = isTechReport
-    ? new RegExp(`^TR-${year}-(\\d+)$`)
-    : new RegExp(`^INV-${year}-HCIR-(\\d+)$`)
-
-  const maxNum = (data || []).reduce((max: number, row: any) => {
-    const raw = String(row?.invoice_number || "").trim()
-    const m = raw.match(pattern)
-    const n = m ? Number(m[1]) : Number.NaN
-    return Number.isFinite(n) ? Math.max(max, n) : max
-  }, 0)
-  const next = String(maxNum + 1).padStart(4, "0")
-  return isTechReport ? `TR-${year}-${next}` : `INV-${year}-HCIR-${next}`
-}
 
 function getAdminClient() {
   try {
@@ -88,6 +66,7 @@ export async function POST(request: NextRequest) {
 
       const now = new Date().toISOString()
       const fixedInvoiceNumber = String(existing.invoice_number || invoice.invoiceNumber || "").trim()
+      const referenceNumber = await referenceForCategory(supabase, String(body?.projectCategory || ""), String(body?.referenceNumber || ""))
       const updateRecord = {
         invoice_number: fixedInvoiceNumber,
         client_name: clientName,
@@ -98,7 +77,7 @@ export async function POST(request: NextRequest) {
         tax_amount: invoice.totals.taxAmount,
         grand_total: invoice.totals.grandTotal,
         created_by: existing.created_by || user?.id || null,
-        payload: { ...body, dashboardScope: invoice.dashboardScope, invoiceNumber: fixedInvoiceNumber },
+        payload: { ...body, referenceNumber, dashboardScope: invoice.dashboardScope, invoiceNumber: fixedInvoiceNumber },
         updated_at: now,
       }
       const updateResult = await supabase
@@ -121,16 +100,14 @@ export async function POST(request: NextRequest) {
     }
 
     const documentKind = String(body?.documentKind || "invoice")
-    const requestedNumber = String(body?.invoiceNumber || body?.reportNumber || "").trim()
+    const referenceNumber = await referenceForCategory(supabase, String(body?.projectCategory || ""), "")
+    body.referenceNumber = referenceNumber
 
     let insertResult: any = null
     let lastError: any = null
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const now = new Date().toISOString()
-      const generatedInvoiceNumber =
-        attempt === 0 && requestedNumber
-          ? requestedNumber
-          : await generateNextInvoiceNumber(supabase, documentKind)
+      const generatedInvoiceNumber = await generateNextInvoiceNumber(supabase, documentKind, clientName)
       const record = {
         invoice_number: generatedInvoiceNumber,
         client_name: clientName,
@@ -188,6 +165,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Server not configured", details: envError }, { status: 500 })
     }
 
+    const nextNumberKind = String(request.nextUrl.searchParams.get("nextNumber") || "").trim()
+    if (["invoice", "quotation", "delivery_note", "technical_report"].includes(nextNumberKind)) {
+      const clientName = String(request.nextUrl.searchParams.get("clientName") || "")
+      const invoiceNumber = await generateNextInvoiceNumber(supabase, nextNumberKind, clientName)
+      return NextResponse.json({ success: true, invoiceNumber })
+    }
+
+    if (request.nextUrl.searchParams.get("nextReferences") === "1") {
+      const references = await nextReferences(supabase)
+      return NextResponse.json({ success: true, references })
+    }
+
+    const nextReferenceCategory = String(request.nextUrl.searchParams.get("nextReference") || "").trim()
+    if (["fyp", "side", "research"].includes(nextReferenceCategory)) {
+      const referenceNumber = await referenceForCategory(supabase, nextReferenceCategory, "")
+      return NextResponse.json({ success: true, referenceNumber })
+    }
+
     const invoiceNumberLookup = String(request.nextUrl.searchParams.get("invoiceNumber") || "").trim()
     if (invoiceNumberLookup) {
       const { data, error } = await supabase
@@ -206,7 +201,8 @@ export async function GET(request: NextRequest) {
     const q = String(request.nextUrl.searchParams.get("clientName") || "").trim()
     const scope = request.nextUrl.searchParams.get("scope") === "project" ? "project" : "main"
     const summaryOnly = request.nextUrl.searchParams.get("summaryOnly") === "true"
-    const limit = Math.min(100, Math.max(1, Number(request.nextUrl.searchParams.get("limit") || 50)))
+    const year = parseProjectYear(request.nextUrl.searchParams.get("year"))
+    const limit = Math.min(year ? 1000 : 100, Math.max(1, Number(request.nextUrl.searchParams.get("limit") || 50)))
     const documentKindParam = String(request.nextUrl.searchParams.get("documentKind") || "").trim()
     const documentKind =
       documentKindParam === "invoice" ||
@@ -241,6 +237,7 @@ export async function GET(request: NextRequest) {
         )
         // Exclude delivery notes and technical reports from default invoice list.
       }
+      if (year) query = query.or(projectYearOrFilter(year))
 
       const result = await query
       if (result.error) {
@@ -253,7 +250,7 @@ export async function GET(request: NextRequest) {
           { status: 500 }
         )
       }
-      invoices = (result.data || []).map((row: any) => {
+      invoices = (result.data || []).filter((row: any) => !year || recordInProjectYear(row, year)).map((row: any) => {
         const records = row?.payload?.payments?.records
         const paidTotal = Array.isArray(records)
           ? records.reduce((acc: number, r: any) => acc + Number(r?.amount || 0), 0)
@@ -271,7 +268,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Summary for dashboard cards and list header
-    let summaryQuery = supabase.from(INVOICES_TABLE).select("grand_total,payload", { count: "exact" })
+    let summaryQuery = supabase.from(INVOICES_TABLE).select("grand_total,issue_date,created_at,payload", { count: "exact" })
     summaryQuery = summaryQuery
       .or("payload->>usageTrackingRecord.is.null,payload->>usageTrackingRecord.eq.false")
       .or("payload->>hiddenFromList.is.null,payload->>hiddenFromList.eq.false")
@@ -288,10 +285,11 @@ export async function GET(request: NextRequest) {
         "payload->>documentKind.is.null,payload->>documentKind.eq.invoice,payload->>documentKind.eq.quotation"
       )
     }
+    if (year) summaryQuery = summaryQuery.or(projectYearOrFilter(year))
     const summaryResult = await summaryQuery
-    const summaryRows = summaryResult.data || []
+    const summaryRows = (summaryResult.data || []).filter((row: any) => !year || recordInProjectYear(row, year))
     const totalAmount = summaryRows.reduce((sum, row) => sum + Number(row.grand_total || 0), 0)
-    const totalCount = summaryResult.count || 0
+    const totalCount = year ? summaryRows.length : summaryResult.count || summaryRows.length
     const totalPaid = summaryRows.reduce((sum, row: any) => {
       const records = row?.payload?.payments?.records
       if (!Array.isArray(records)) return sum

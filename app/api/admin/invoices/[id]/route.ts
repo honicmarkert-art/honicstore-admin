@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { validateAdminAccess, createAdminSupabaseClient } from "@/lib/admin-auth"
+import { isAutoCategoryReference, referenceMatchesCategory } from "@/lib/project-reference"
+import { referenceForCategory } from "@/lib/invoice-sequence"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -22,6 +24,7 @@ const patchSchema = z.object({
     .optional(),
   removePaymentRecordId: z.string().optional(),
   hiddenFromList: z.boolean().optional(),
+  projectCategory: z.enum(["fyp", "side", "research", ""]).optional(),
 })
 
 function getAdminClient() {
@@ -99,6 +102,14 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         note: patch.paymentNote ?? payments.note ?? "",
       },
       ...(patch.hiddenFromList !== undefined ? { hiddenFromList: patch.hiddenFromList } : {}),
+      ...(patch.projectCategory !== undefined ? { projectCategory: patch.projectCategory } : {}),
+    }
+    if (patch.projectCategory && ["fyp", "side", "research"].includes(patch.projectCategory)) {
+      const currentReference = String(currentPayload.referenceNumber || "")
+      const keepCurrent = currentReference && (!isAutoCategoryReference(currentReference) || referenceMatchesCategory(currentReference, patch.projectCategory))
+      if (!keepCurrent) {
+        nextPayload.referenceNumber = await referenceForCategory(supabase, patch.projectCategory, "")
+      }
     }
 
     const update: Record<string, any> = {

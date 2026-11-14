@@ -39,7 +39,7 @@ Since both apps share the same Supabase database, these **must be identical**:
 
 **Main App Only:**
 - `NEXT_PUBLIC_APP_URL=https://honiccompanystore.com`
-- ClickPesa payment gateway variables
+- Snippe payment variables (`SNIPPE_API_KEY`, `SNIPPE_WEBHOOK_SECRET`)
 - Google Maps API key (if used)
 
 **Admin App Only:**
@@ -59,7 +59,7 @@ Since both apps share the same Supabase database, these **must be identical**:
    - Change `NEXT_PUBLIC_SITE_URL` to `https://siem.honiccompanystore.com`
 
 3. **Remove unnecessary variables** (optional):
-   - ClickPesa variables (unless admin handles payments)
+   - Snippe variables, unless the admin app starts payments
    - Google Maps (unless admin uses maps)
    - Other main-app-specific variables
 

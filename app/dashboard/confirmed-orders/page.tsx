@@ -29,11 +29,80 @@ import {
   CreditCard,
   DollarSign,
   Calendar,
-  FileText
+  FileText,
+  type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTheme } from '@/hooks/use-theme'
 import { supabaseClient } from '@/lib/supabase-client'
+
+type StoredAddress = {
+  fullName: string
+  address1: string
+  address2?: string
+  city: string
+  state: string
+  postalCode: string
+  country: string
+  phone: string
+  email?: string
+}
+
+function readAddress(value: unknown): StoredAddress {
+  let raw: Record<string, unknown> = {}
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown
+      if (parsed && typeof parsed === "object") raw = parsed as Record<string, unknown>
+    } catch {
+      raw = {}
+    }
+  } else if (value && typeof value === "object") {
+    raw = value as Record<string, unknown>
+  }
+  const text = (key: string) => (typeof raw[key] === "string" ? String(raw[key]) : "")
+  return {
+    fullName: text("fullName"),
+    address1: text("address1"),
+    address2: text("address2") || undefined,
+    city: text("city"),
+    state: text("state"),
+    postalCode: text("postalCode"),
+    country: text("country"),
+    phone: text("phone"),
+    email: text("email") || undefined,
+  }
+}
+
+type ConfirmedApiRow = {
+  id: string
+  order_id: string
+  shipping_address?: unknown
+  billing_address?: unknown
+  delivery_option?: string
+  reference_id?: string
+  pickup_id?: string
+  created_at?: string
+  order_number?: string
+  customer_name?: string
+  customer_email?: string
+  customer_phone?: string
+  user_id?: string | null
+  status?: ConfirmedOrder["status"]
+  total_amount?: number | string
+  currency?: string
+  order_items?: ConfirmedOrderItem[]
+  total_items?: number
+  confirmed_at?: string
+  confirmed_by?: string
+  notes?: string
+  payment_method?: string
+  payment_status?: string
+  clickpesa_transaction_id?: string
+  failure_reason?: string
+  suppliers?: string[]
+  hasSuppliers?: boolean
+}
 
 interface ConfirmedOrderItem {
   id: string
@@ -81,6 +150,7 @@ interface ConfirmedOrder {
   }
   paymentMethod: string
   paymentStatus: 'paid' | 'pending' | 'failed'
+  paymentReference?: string
   failureReason?: string
   deliveryOption: 'shipping' | 'pickup'
   order_items: ConfirmedOrderItem[]
@@ -114,10 +184,9 @@ export default function ConfirmedOrdersPage() {
     const res = await fetch('/api/admin/confirmed-orders', { cache: 'no-store', credentials: 'include' })
       if (!res.ok) throw new Error('Failed to fetch confirmed orders')
       const data = await res.json()
-      const normalized: ConfirmedOrder[] = (data.orders || []).map((o: any) => {
-        // Extract customer information from appropriate address based on delivery option
-        const shippingAddress = typeof o.shipping_address === 'string' ? JSON.parse(o.shipping_address) : (o.shipping_address || {});
-        const billingAddress = typeof o.billing_address === 'string' ? JSON.parse(o.billing_address) : (o.billing_address || {});
+      const normalized: ConfirmedOrder[] = ((data.orders || []) as ConfirmedApiRow[]).map((o) => {
+        const shippingAddress = readAddress(o.shipping_address)
+        const billingAddress = readAddress(o.billing_address)
         
         // For pickup orders, use billing address (contact info); for shipping, use shipping address
         const isPickup = o.delivery_option === 'pickup';
@@ -144,8 +213,9 @@ export default function ConfirmedOrdersPage() {
           confirmedBy: o.confirmed_by || 'admin',
           notes: o.notes || '',
           shippingAddress: shippingAddress,
-          paymentMethod: o.payment_method || 'clickpesa',
-          paymentStatus: o.payment_status || 'paid',
+          paymentMethod: o.payment_method || 'snippe',
+          paymentStatus: o.payment_status === 'success' || !o.payment_status ? 'paid' : o.payment_status === 'failed' ? 'failed' : 'pending',
+          paymentReference: o.clickpesa_transaction_id || undefined,
           failureReason: o.failure_reason || undefined,
           order_items: o.order_items || [],
           suppliers: o.suppliers || [],
@@ -293,7 +363,7 @@ export default function ConfirmedOrdersPage() {
   }, [orders, searchTerm, statusFilter, userTypeFilter, deliveryOptionFilter, supplierFilter, dateFrom, dateTo, timeFrom, timeTo])
 
   const getStatusBadge = (status: ConfirmedOrder['status'] | string) => {
-    const statusConfig: Record<string, { color: string; icon: any }> = {
+    const statusConfig: Record<string, { color: string; icon: LucideIcon }> = {
       confirmed: { color: 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300', icon: CheckCircle },
       shipped: { color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300', icon: Truck },
       delivered: { color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-300', icon: Package },
@@ -977,9 +1047,9 @@ export default function ConfirmedOrdersPage() {
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={cn("font-medium", themeClasses.mainText)}>ClickPesa Reference:</span>
+                    <span className={cn("font-medium", themeClasses.mainText)}>Payment reference:</span>
                     <span className={cn("text-sm font-mono", themeClasses.textNeutralSecondary)}>
-                      {selectedOrder.referenceId}
+                      {selectedOrder.paymentReference || "Not issued yet"}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">

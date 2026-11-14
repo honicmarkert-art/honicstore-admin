@@ -262,7 +262,7 @@ export async function POST(request: NextRequest) {
       user_id: orderData.userId || null,
       delivery_option: orderData.deliveryOption || 'shipping',
       total_amount: orderData.totalAmount,
-      payment_method: orderData.paymentMethod || 'clickpesa',
+      payment_method: orderData.paymentMethod || 'snippe',
       payment_status: 'paid',
       status: 'confirmed',
       confirmed_by: orderData.confirmedBy || user?.id || null,

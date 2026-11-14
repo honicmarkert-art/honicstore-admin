@@ -7,6 +7,7 @@ import { enhancedRateLimit, logSecurityEvent } from '@/lib/enhanced-rate-limit'
 import { performanceMonitor } from '@/lib/performance-monitor'
 import { getCachedData, setCachedData, CACHE_TTL } from '@/lib/database-optimization'
 import { logError, createErrorResponse } from '@/lib/error-handler'
+import { expireAwaitingConfirmationOrders } from '@/lib/expire-awaiting-orders'
 
 
 
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest) {
       delivery_option: orderData.deliveryOption,
       // Common required fields
       total_amount: orderData.totalAmount,
-      payment_method: 'clickpesa',
+      payment_method: 'snippe',
       payment_status: 'pending',
       status: 'pending',
       created_at: orderData.timestamp,
@@ -243,6 +244,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Server not configured', details: envError }, { status: 500 })
     }
     
+    await expireAwaitingConfirmationOrders(supabase)
+
     // Fetch all orders with their order items
     const { data: orders, error: ordersError } = await supabase
       .from('orders')
@@ -492,7 +495,7 @@ async function sendAdminNotification(orderData: any, orderId: string, referenceI
 
 // Function to generate payment URL
 function generatePaymentUrl(referenceId: string, amount: number): string {
-  // Generate payment URL (simulate ClickPesa or other payment gateway)
+  // Generate a payment URL for the order.
   const { buildUrl } = require('@/lib/url-utils')
   const paymentId = `PAY_${Date.now()}`
   

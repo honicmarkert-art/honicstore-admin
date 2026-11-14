@@ -37,6 +37,70 @@ import { cn } from '@/lib/utils'
 import { useTheme } from '@/hooks/use-theme'
 import { supabaseClient } from '@/lib/supabase-client'
 
+type StoredAddress = {
+  fullName: string
+  address1: string
+  address2?: string
+  city: string
+  state: string
+  postalCode: string
+  country: string
+  phone: string
+  email?: string
+}
+
+function readAddress(value: unknown): StoredAddress {
+  let raw: Record<string, unknown> = {}
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown
+      if (parsed && typeof parsed === "object") raw = parsed as Record<string, unknown>
+    } catch {
+      raw = {}
+    }
+  } else if (value && typeof value === "object") {
+    raw = value as Record<string, unknown>
+  }
+  const text = (key: string) => (typeof raw[key] === "string" ? String(raw[key]) : "")
+  return {
+    fullName: text("fullName"),
+    address1: text("address1"),
+    address2: text("address2") || undefined,
+    city: text("city"),
+    state: text("state"),
+    postalCode: text("postalCode"),
+    country: text("country"),
+    phone: text("phone"),
+    email: text("email") || undefined,
+  }
+}
+
+type OrdersApiRow = {
+  id: string
+  shipping_address?: unknown
+  billing_address?: unknown
+  delivery_option?: string
+  reference_id?: string
+  pickup_id?: string
+  created_at?: string
+  order_number?: string
+  customer_name?: string
+  customer_email?: string
+  customer_phone?: string
+  user_id?: string | null
+  status?: Order["status"]
+  total_amount?: number | string
+  calculated_total?: number | string
+  currency?: string
+  order_items?: OrderItem[]
+  total_items?: number
+  payment_method?: string
+  payment_status?: string
+  clickpesa_transaction_id?: string
+  payment_timestamp?: string
+  failure_reason?: string
+}
+
 interface OrderItem {
   id: string
   product_id: number
@@ -112,22 +176,18 @@ export default function AdminOrdersPage() {
   const fetchOrders = async (isRealTimeUpdate = false) => {
     if (!isRealTimeUpdate) {
       setIsLoading(true)
-    } else {
     }
-    
     try {
       const res = await fetch(`/api/admin/orders?t=${Date.now()}`, { cache: 'no-store', credentials: 'include' })
       if (!res.ok) {
-        const errorText = await res.text().catch(() => '')
         throw new Error(`Failed to fetch orders: ${res.status} ${res.statusText}`)
       }
       
       const data = await res.json()
       
-      const normalized: Order[] = (data.orders || []).map((o: any) => {
-        // Extract customer information from appropriate address based on delivery option
-        const shippingAddress = typeof o.shipping_address === 'string' ? JSON.parse(o.shipping_address) : (o.shipping_address || {});
-        const billingAddress = typeof o.billing_address === 'string' ? JSON.parse(o.billing_address) : (o.billing_address || {});
+      const normalized: Order[] = ((data.orders || []) as OrdersApiRow[]).map((o) => {
+        const shippingAddress = readAddress(o.shipping_address)
+        const billingAddress = readAddress(o.billing_address)
         
         // For pickup orders, use billing address (contact info); for shipping, use shipping address
         const isPickup = o.delivery_option === 'pickup';
@@ -150,8 +210,8 @@ export default function AdminOrdersPage() {
           orderDate: o.created_at || new Date().toISOString(),
           deliveryOption: o.delivery_option || 'shipping', // Default to shipping if not specified
           shippingAddress: shippingAddress,
-          paymentMethod: o.payment_method || 'clickpesa',
-          paymentStatus: o.payment_status || (o.status === 'confirmed' ? 'paid' : 'unpaid'),
+          paymentMethod: o.payment_method || 'snippe',
+          paymentStatus: o.payment_status === 'success' ? 'paid' : o.payment_status === 'reserved' ? 'pending' : (o.payment_status || (o.status === 'confirmed' ? 'paid' : 'unpaid')),
           clickpesaTransactionId: o.clickpesa_transaction_id || undefined,
           paymentTimestamp: o.payment_timestamp || undefined,
           failureReason: o.failure_reason || undefined,
@@ -275,7 +335,11 @@ export default function AdminOrdersPage() {
     }
 
     // Status filter
-    if (statusFilter !== 'all') {
+    if (statusFilter === 'expired') {
+      filtered = filtered.filter(order => order.status === 'cancelled' && String(order.failureReason || '').toLowerCase().includes('expired'))
+    } else if (statusFilter === 'cancelled') {
+      filtered = filtered.filter(order => order.status === 'cancelled' && !String(order.failureReason || '').toLowerCase().includes('expired'))
+    } else if (statusFilter !== 'all') {
       filtered = filtered.filter(order => order.status === statusFilter)
     }
 
@@ -336,7 +400,20 @@ export default function AdminOrdersPage() {
     return filtered
   }, [orders, searchTerm, statusFilter, paymentStatusFilter, userTypeFilter, deliveryOptionFilter, dateFrom, dateTo, timeFrom, timeTo, forceUpdate])
 
-  const getStatusBadge = (status: Order['status']) => {
+  const isExpiredOrder = (order: Pick<Order, 'status' | 'failureReason'>) =>
+    order.status === 'cancelled' && String(order.failureReason || '').toLowerCase().includes('expired')
+
+  const confirmationTimeLeft = (orderDate: string) => {
+    const leftMs = 15 * 60 * 1000 - (Date.now() - new Date(orderDate).getTime())
+    if (leftMs <= 0) return 'Expiring now'
+    const hours = Math.floor(leftMs / (60 * 60 * 1000))
+    const minutes = Math.floor((leftMs % (60 * 60 * 1000)) / (60 * 1000))
+    return hours >= 1 ? `Expires in ${hours}h` : `Expires in ${Math.max(minutes, 1)}m`
+  }
+
+  const getStatusBadge = (order: Pick<Order, 'status' | 'failureReason' | 'orderDate'>) => {
+    const waitingTooLong = order.status === 'pending' && Date.now() - new Date(order.orderDate).getTime() >= 15 * 60 * 1000
+    const status = waitingTooLong ? 'cancelled' : order.status
     const statusConfig = {
       pending: { 
         color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300 border-yellow-200 dark:border-yellow-800', 
@@ -371,7 +448,7 @@ export default function AdminOrdersPage() {
       cancelled: { 
         color: 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-300 border-red-200 dark:border-red-800', 
         icon: XCircle,
-        label: 'Cancelled'
+        label: waitingTooLong || isExpiredOrder(order) ? 'Expired' : 'Cancelled'
       }
     }
 
@@ -454,6 +531,17 @@ export default function AdminOrdersPage() {
     const orderDate = new Date(order.orderDate)
     const ageInHours = (now.getTime() - orderDate.getTime()) / (1000 * 60 * 60)
     
+    if (order.status === 'pending') {
+      const left = confirmationTimeLeft(order.orderDate)
+      if (left === 'Expiring now') return null
+      return (
+        <Badge variant="outline" className="text-xs bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300">
+          <Clock className="w-3 h-3 mr-1" />
+          {left}
+        </Badge>
+      )
+    }
+
     if (order.paymentStatus === 'pending' && ageInHours >= 0.8) { // 48 minutes (close to 1 hour)
       return (
         <Badge variant="outline" className="text-xs bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300">
@@ -586,7 +674,7 @@ export default function AdminOrdersPage() {
         totalAmount: order.total || order.total_amount || order.totalAmount,
         shippingAddress: order.shippingAddress || order.shipping_address,
         billingAddress: order.billingAddress || order.billing_address || order.shippingAddress || order.shipping_address,
-        paymentMethod: order.paymentMethod || order.payment_method || 'clickpesa',
+        paymentMethod: order.paymentMethod || order.payment_method || 'snippe',
         deliveryOption: order.deliveryOption || order.delivery_option,
         confirmedBy: null, // Set to null since we don't have admin user ID
         orderItems: order.order_items || []
@@ -716,13 +804,12 @@ export default function AdminOrdersPage() {
         throw new Error(errorData.message || 'Failed to delete order')
       }
 
-      const result = await res.json()
+      await res.json()
       
-      // Close dialog and refresh the orders list
       setDeleteDialogOpen(false)
       setOrderToDelete(null)
       await fetchOrders()
-    } catch (error: any) {
+    } catch {
       setDeleteDialogOpen(false)
       setOrderToDelete(null)
     }
@@ -768,7 +855,7 @@ export default function AdminOrdersPage() {
         <div className="mb-8">
           <h1 className={cn("text-3xl font-bold mb-2", themeClasses.mainText)}>Orders Management</h1>
           <p className={cn("text-lg", themeClasses.textNeutralSecondary)}>
-            Manage and track customer orders
+            Awaiting confirmation lasts 15 minutes. After that the order is expired. Payment is a separate status.
           </p>
         </div>
 
@@ -826,13 +913,14 @@ export default function AdminOrdersPage() {
                   )}
                 >
                   <option value="all">All Statuses</option>
-                  <option value="pending">Awaiting Confirmation</option>
+                  <option value="pending">Awaiting confirmation — not accepted yet</option>
                   <option value="confirmed">Confirmed</option>
                   <option value="shipped">Shipped</option>
                   <option value="delivered">Delivered</option>
                   <option value="ready_for_pickup">Ready for Pickup</option>
                   <option value="picked_up">Picked Up</option>
                   <option value="cancelled">Cancelled</option>
+                  <option value="expired">Expired</option>
                 </select>
               </div>
 
@@ -1086,7 +1174,7 @@ export default function AdminOrdersPage() {
                             Status & Payment
                           </span>
                           <div className="flex flex-wrap gap-2">
-                            {getStatusBadge(order.status)}
+                            {getStatusBadge(order)}
                             {getPaymentStatusBadge(order.paymentStatus)}
                           </div>
                         </div>
@@ -1266,9 +1354,9 @@ export default function AdminOrdersPage() {
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={cn("font-medium", themeClasses.mainText)}>ClickPesa Reference:</span>
+                    <span className={cn("font-medium", themeClasses.mainText)}>Snippe reference:</span>
                     <span className={cn("text-sm font-mono", themeClasses.textNeutralSecondary)}>
-                      {selectedOrder.referenceId}
+                      {selectedOrder.clickpesaTransactionId || "Not issued yet"}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1285,7 +1373,7 @@ export default function AdminOrdersPage() {
                     <span className={cn("text-sm font-medium", themeClasses.textNeutralSecondary)}>
                       Order Status
                     </span>
-                    {getStatusBadge(selectedOrder.status)}
+                    {getStatusBadge(selectedOrder)}
                   </div>
 
                   {/* Payment Status */}
