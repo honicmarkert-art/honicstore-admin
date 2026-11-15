@@ -23,7 +23,6 @@ export function RoutePrefetcher() {
       router.prefetch('/account/payment')
       router.prefetch('/account/messages')
       router.prefetch('/account/coupons')
-      router.prefetch('/account/coins')
     }
 
     // Use requestIdleCallback for better performance

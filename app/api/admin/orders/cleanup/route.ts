@@ -58,7 +58,6 @@ export async function POST(request: NextRequest) {
       let totalProcessed = 0
       let failedCount = 0
       let deletedCount = 0
-      const expiredCount = await expireAwaitingConfirmationOrders(supabase)
 
       // Step 1: Mark pending payments as failed after 1 hour
       logger.log('📝 Step 1: Marking pending payments as failed (older than 1 hour)...')
@@ -168,7 +167,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      totalProcessed = failedCount + deletedCount + expiredCount
+      totalProcessed = failedCount + deletedCount
 
       logger.log('🎉 Cleanup completed!')
       logger.log(`- Orders marked as failed: ${failedCount}`)
@@ -193,7 +192,6 @@ export async function POST(request: NextRequest) {
         message: 'Order cleanup completed successfully',
         failedCount,
         deletedCount,
-        expiredCount,
         totalProcessed,
         timestamp: now.toISOString()
       })

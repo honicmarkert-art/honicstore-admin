@@ -134,6 +134,10 @@ export async function PATCH(
 
       logger.log('🔧 Order updated successfully:', updatedOrder)
 
+      if (status && status !== 'pending') {
+        void notifyOrderStatus(supabase, updatedOrder, status)
+      }
+
       // Log admin action
       logSecurityEvent('ORDER_UPDATED', {
         userId: user?.id,
@@ -163,6 +167,78 @@ export async function PATCH(
       return createErrorResponse(error, 500)
     }
   })
+}
+
+async function notifyOrderStatus(supabase: ReturnType<typeof createAdminSupabaseClient>, order: Record<string, any>, status: string) {
+  try {
+    let customerEmail: string | null = null
+    if (order.user_id) {
+      const { data } = await supabase.auth.admin.getUserById(order.user_id)
+      customerEmail = data.user?.email || null
+    }
+    const shipping = typeof order.shipping_address === 'string' ? JSON.parse(order.shipping_address) : (order.shipping_address || {})
+    const billing = typeof order.billing_address === 'string' ? JSON.parse(order.billing_address) : (order.billing_address || {})
+    customerEmail = customerEmail || shipping.email || billing.email || null
+    if (!customerEmail) return
+
+    const { data: orderItems } = await supabase
+      .from('order_items')
+      .select('product_name, quantity')
+      .eq('order_id', order.id)
+    const items = (orderItems || []).map((item: { product_name?: string; quantity?: number }) => ({
+      name: item.product_name || 'Item',
+      quantity: Number(item.quantity) || 1,
+    }))
+    const orderNumber = String(order.order_number || order.id)
+
+    if (status === 'cancelled') {
+      const { sendOrderCancellationEmail } = await import('@/lib/user-email-service')
+      const paid = order.payment_status === 'paid' || order.payment_status === 'success'
+      await sendOrderCancellationEmail(customerEmail, {
+        orderNumber,
+        cancellationReason: order.failure_reason || 'Order cancelled',
+        refundAmount: paid ? Number(order.total_amount) || undefined : undefined,
+        refundMethod: paid ? 'Original payment method' : undefined,
+        refundTimeline: paid ? '5-7 business days' : undefined,
+      })
+      return
+    }
+    if (status === 'ready_for_pickup') {
+      const { sendPickupReminderEmail } = await import('@/lib/user-email-service')
+      await sendPickupReminderEmail(customerEmail, {
+        orderNumber,
+        pickupId: order.pickup_id || orderNumber,
+        pickupLocation: shipping.address1 || shipping.address || 'Honic store',
+        pickupInstructions: 'Bring a valid ID when you collect the order.',
+        availableTimes: 'Monday to Friday, 9:00 to 18:00',
+        items,
+      })
+      return
+    }
+    if (status === 'shipped' && order.tracking_number) {
+      const { sendShippingNotificationEmail } = await import('@/lib/user-email-service')
+      await sendShippingNotificationEmail(customerEmail, {
+        orderNumber,
+        trackingNumber: String(order.tracking_number),
+        carrier: order.carrier || 'Delivery',
+        trackingUrl: `${process.env.NEXT_PUBLIC_SITE_URL || 'https://honiccompanystore.com'}/account/orders/${encodeURIComponent(orderNumber)}`,
+        estimatedDelivery: order.estimated_delivery || 'To be confirmed',
+        shippingAddress: shipping,
+        items,
+      })
+      return
+    }
+    const { sendOrderStatusUpdateEmail } = await import('@/lib/user-email-service')
+    await sendOrderStatusUpdateEmail(customerEmail, {
+      orderNumber,
+      status: status.replace(/_/g, ' '),
+      statusMessage: `Your order is now ${status.replace(/_/g, ' ')}.`,
+      trackingNumber: order.tracking_number || undefined,
+      items,
+    })
+  } catch (error) {
+    logger.error('Order status email failed:', error)
+  }
 }
 
 // DELETE /api/admin/orders/[orderId] - Delete a specific order by database ID

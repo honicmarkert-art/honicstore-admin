@@ -59,7 +59,7 @@ Since both apps share the same Supabase database, these **must be identical**:
    - Change `NEXT_PUBLIC_SITE_URL` to `https://siem.honiccompanystore.com`
 
 3. **Remove unnecessary variables** (optional):
-   - Snippe variables, unless the admin app starts payments
+   - Snippe variables (the store handles checkout payments)
    - Google Maps (unless admin uses maps)
    - Other main-app-specific variables
 

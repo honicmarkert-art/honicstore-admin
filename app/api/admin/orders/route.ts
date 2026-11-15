@@ -495,7 +495,7 @@ async function sendAdminNotification(orderData: any, orderId: string, referenceI
 
 // Function to generate payment URL
 function generatePaymentUrl(referenceId: string, amount: number): string {
-  // Generate a payment URL for the order.
+  // Generate payment URL (simulate ClickPesa or other payment gateway)
   const { buildUrl } = require('@/lib/url-utils')
   const paymentId = `PAY_${Date.now()}`
   

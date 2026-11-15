@@ -213,6 +213,22 @@ async function sendPaymentConfirmation(order: any, supabase: any) {
     } else {
       logger.log(`✅ Order confirmation email sent to ${customerEmail} for order ${order.order_number || order.id}`)
     }
+    const { sendInvoiceEmail } = await import('@/lib/user-email-service')
+    await sendInvoiceEmail(customerEmail, {
+      invoiceNumber: order.order_number || order.id.toString(),
+      invoiceDate: new Date().toLocaleDateString(),
+      orderNumber: order.order_number || order.id.toString(),
+      items: items.map((item: { name: string; quantity: number; price: number }) => ({
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price,
+      })),
+      subtotal,
+      tax,
+      total,
+      billingAddress: billingAddress || shippingAddress || {},
+      invoiceUrl: buildUrl(`/api/user/orders/${order.order_number || order.id}/invoice`),
+    })
 
     return emailResult
   } catch (error: any) {

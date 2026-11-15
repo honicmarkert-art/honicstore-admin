@@ -92,6 +92,18 @@ const nextConfig = {
     
     return config
   },
+  async redirects() {
+    return [
+      { source: '/admin', destination: '/dashboard', permanent: false },
+      { source: '/home', destination: '/dashboard', permanent: false },
+      { source: '/products', destination: '/dashboard/products', permanent: false },
+      { source: '/supplier/dashboard', destination: '/dashboard', permanent: false },
+      { source: '/projectdashboard/service-costs', destination: '/projectdashboard', permanent: false },
+      { source: '/projectdashboard/material-costs', destination: '/projectdashboard', permanent: false },
+      { source: '/dashboard/delivery-notes/twende', destination: '/dashboard/delivery-notes?preset=twende-tanzania', permanent: false },
+      { source: '/projectdashboard/delivery-note/twende', destination: '/projectdashboard/delivery-note?preset=twende-tanzania', permanent: false },
+    ]
+  },
   // External packages for server components
   serverExternalPackages: ['@supabase/supabase-js'],
   // Suppress hydration warnings for browser extension attributes

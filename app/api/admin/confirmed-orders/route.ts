@@ -544,7 +544,7 @@ export async function PATCH(request: NextRequest) {
               .eq('order_id', confirmedOrder.order_id)
               .single()
 
-            if (trackingInfo) {
+            if (trackingInfo?.tracking_number) {
               await sendShippingNotificationEmail(customerEmail, {
                 orderNumber: confirmedOrder.order_number || id.toString(),
                 trackingNumber: trackingInfo.tracking_number,
@@ -556,6 +556,17 @@ export async function PATCH(request: NextRequest) {
                   name: item.product_name,
                   quantity: item.quantity,
                   image: item.products?.image
+                })) || []
+              })
+            } else {
+              const { sendOrderStatusUpdateEmail } = await import('@/lib/user-email-service')
+              await sendOrderStatusUpdateEmail(customerEmail, {
+                orderNumber: confirmedOrder.order_number || id.toString(),
+                status: 'Shipped',
+                statusMessage: 'Your order has shipped. Tracking details will appear on the order page when they are available.',
+                items: orderItems?.map((item: any) => ({
+                  name: item.product_name,
+                  quantity: item.quantity
                 })) || []
               })
             }

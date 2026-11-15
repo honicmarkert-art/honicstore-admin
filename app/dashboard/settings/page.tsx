@@ -38,6 +38,11 @@ interface SettingsData {
   contactEmail: string
   contactPhone: string
   address: string
+  socialLinks: {
+    facebook: string
+    instagram: string
+    youtube: string
+  }
   // SEO
   seo: {
     favicon: string
@@ -77,6 +82,11 @@ export default function SettingsPage() {
     contactEmail: adminSettings?.contactEmail || "",
     contactPhone: adminSettings?.contactPhone || "",
     address: adminSettings?.address || "",
+    socialLinks: {
+      facebook: adminSettings?.socialLinks?.facebook || "",
+      instagram: adminSettings?.socialLinks?.instagram || "",
+      youtube: adminSettings?.socialLinks?.youtube || "",
+    },
     seo: {
       favicon: adminSettings?.seo?.favicon || "/favicon.ico"
     }
@@ -101,6 +111,11 @@ export default function SettingsPage() {
         contactEmail: adminSettings.contactEmail || prev.contactEmail,
         contactPhone: adminSettings.contactPhone || prev.contactPhone,
         address: adminSettings.address || prev.address,
+        socialLinks: {
+          facebook: adminSettings.socialLinks?.facebook || prev.socialLinks.facebook,
+          instagram: adminSettings.socialLinks?.instagram || prev.socialLinks.instagram,
+          youtube: adminSettings.socialLinks?.youtube || prev.socialLinks.youtube,
+        },
         seo: {
           favicon: adminSettings.seo?.favicon || prev.seo.favicon
         }
@@ -207,6 +222,7 @@ export default function SettingsPage() {
         contactEmail: settings.contactEmail,
         contactPhone: settings.contactPhone,
         address: settings.address,
+        socialLinks: settings.socialLinks,
         seo: settings.seo
       }
       
@@ -568,6 +584,39 @@ export default function SettingsPage() {
                     placeholder="Enter company address"
                     rows={4}
                     className="resize-none"
+                  />
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <Label htmlFor="social-facebook" className="text-sm font-semibold">Facebook URL</Label>
+                  <Input
+                    id="social-facebook"
+                    value={settings.socialLinks.facebook}
+                    onChange={(e) => setSettings(prev => ({ ...prev, socialLinks: { ...prev.socialLinks, facebook: e.target.value } }))}
+                    placeholder="https://facebook.com/your-page"
+                    className="h-11"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="social-instagram" className="text-sm font-semibold">Instagram URL</Label>
+                  <Input
+                    id="social-instagram"
+                    value={settings.socialLinks.instagram}
+                    onChange={(e) => setSettings(prev => ({ ...prev, socialLinks: { ...prev.socialLinks, instagram: e.target.value } }))}
+                    placeholder="https://instagram.com/your-page"
+                    className="h-11"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="social-youtube" className="text-sm font-semibold">YouTube URL</Label>
+                  <Input
+                    id="social-youtube"
+                    value={settings.socialLinks.youtube}
+                    onChange={(e) => setSettings(prev => ({ ...prev, socialLinks: { ...prev.socialLinks, youtube: e.target.value } }))}
+                    placeholder="https://youtube.com/@your-channel"
+                    className="h-11"
                   />
                 </div>
               </CardContent>

@@ -337,6 +337,22 @@ async function sendPaymentConfirmation(order: any) {
     if (!emailResult.success) {
       logger.error('Failed to send order confirmation email:', emailResult.error)
     }
+    const { sendInvoiceEmail } = await import('@/lib/user-email-service')
+    await sendInvoiceEmail(customerEmail, {
+      invoiceNumber: order.order_number || order.id.toString(),
+      invoiceDate: new Date().toLocaleDateString(),
+      orderNumber: order.order_number || order.id.toString(),
+      items: items.map((item: { name: string; quantity: number; price: number }) => ({
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price,
+      })),
+      subtotal,
+      tax,
+      total,
+      billingAddress: order.billing_address || order.shipping_address || {},
+      invoiceUrl: buildUrl(`/api/user/orders/${order.order_number || order.id}/invoice`),
+    })
 
     return emailResult
   } catch (error: any) {
