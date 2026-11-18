@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -18,6 +18,7 @@ import {
   type PackageBlock,
 } from "@/lib/package-invoice"
 import { COMPANY_ADDRESS_DEFAULT, COMPANY_ADDRESS_FOOTER, LOGO_PUBLIC_URL } from "@/lib/technical-report-defaults"
+import { sameClientName } from "@/lib/invoice-sequence"
 
 const BLUE = "#184a96"
 
@@ -387,6 +388,7 @@ export default function PackageInvoicesPage() {
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState<PackageDraft | null>(null)
+  const nameBaseline = useRef({ id: "", name: "", number: "" })
 
   const packageRows = useMemo(() => rows.filter((row) => isPackagePayload(row.payload)), [rows])
 
@@ -444,7 +446,9 @@ export default function PackageInvoicesPage() {
           setError("This saved invoice is not a package invoice.")
           return
         }
-        setDraft(draftFromInvoice(data.invoice))
+        const loaded = draftFromInvoice(data.invoice)
+        nameBaseline.current = { id: loaded.id || "", name: loaded.clientName, number: loaded.invoiceNumber }
+        setDraft(loaded)
       } catch (loadError) {
         if (!controller.signal.aborted) {
           setError(loadError instanceof Error ? loadError.message : "Failed to load invoice")
@@ -456,6 +460,42 @@ export default function PackageInvoicesPage() {
     void load()
     return () => controller.abort()
   }, [invoiceId])
+
+  const draftClientName = draft?.clientName || ""
+  const draftId = draft?.id || ""
+  useEffect(() => {
+    if (docLoading) return
+    const name = draftClientName.trim()
+    const id = draftId
+    if (!name) {
+      setDraft((current) => (current && current.invoiceNumber ? { ...current, invoiceNumber: "" } : current))
+      return
+    }
+    const baseline = nameBaseline.current
+    if (id && baseline.id === id && sameClientName(baseline.name, name)) {
+      setDraft((current) => {
+        if (!current || !baseline.number || current.invoiceNumber === baseline.number) return current
+        return { ...current, invoiceNumber: baseline.number }
+      })
+      return
+    }
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      const res = await fetch(`/api/admin/invoices?nextNumber=invoice&clientName=${encodeURIComponent(name)}`, {
+        cache: "no-store",
+        credentials: "include",
+      })
+      const data = await res.json().catch(() => null)
+      if (!cancelled && res.ok && data?.invoiceNumber) {
+        const nextNumber = String(data.invoiceNumber)
+        setDraft((current) => (current && current.invoiceNumber !== nextNumber ? { ...current, invoiceNumber: nextNumber } : current))
+      }
+    }, 300)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [draftClientName, draftId, docLoading])
 
   const packages = draft?.blocks.filter((block) => block.kind === "package") || []
   const charges = draft?.blocks.filter((block) => block.kind === "charge") || []
@@ -525,6 +565,7 @@ export default function PackageInvoicesPage() {
   const startNew = () => {
     setCreating(true)
     setError(null)
+    nameBaseline.current = { id: "", name: "", number: "" }
     setDraft(blankDraft())
     router.push("/dashboard/invoices/packages")
   }
@@ -594,6 +635,7 @@ export default function PackageInvoicesPage() {
       if (!res.ok || !data?.success) throw new Error(data?.error || data?.details || "Failed to save invoice")
       const nextId = String(data?.invoice?.id || draft.id || "")
       const nextNumber = String(data?.invoice?.invoice_number || draft.invoiceNumber)
+      nameBaseline.current = { id: nextId, name: clientName, number: nextNumber }
       toast({ title: "Package invoice saved", description: `${nextNumber} saved for ${clientName}.` })
       setCreating(false)
       setReloadTick((tick) => tick + 1)

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { validateAdminAccess, createAdminSupabaseClient } from "@/lib/admin-auth"
 import { isAutoCategoryReference, referenceMatchesCategory } from "@/lib/project-reference"
-import { referenceForCategory } from "@/lib/invoice-sequence"
+import { generateNextInvoiceNumber, referenceForCategory, sameClientName } from "@/lib/invoice-sequence"
 import { clearInvoiceReadCache } from "@/lib/invoice-read-cache"
 
 export const dynamic = "force-dynamic"
@@ -69,7 +69,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
     const { data: current, error: currentError } = await supabase
       .from(INVOICES_TABLE)
-      .select("payload, grand_total")
+      .select("payload, grand_total, invoice_number, client_name")
       .eq("id", id)
       .single()
     if (currentError) return NextResponse.json({ error: "Invoice not found", details: currentError.message }, { status: 404 })
@@ -113,12 +113,23 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       }
     }
 
+    const previousName = String(current?.client_name || currentPayload.clientName || "")
+    const nextClientName = patch.clientName !== undefined ? patch.clientName.trim() : previousName
+    const documentKind = String(currentPayload.documentKind || "invoice")
+    const nameChanged = patch.clientName !== undefined && documentKind === "invoice" && !sameClientName(previousName, nextClientName)
+    if (nameChanged) {
+      const nextNumber = await generateNextInvoiceNumber(supabase, "invoice", nextClientName)
+      nextPayload.invoiceNumber = nextNumber
+      nextPayload.clientName = nextClientName
+    }
+
     const update: Record<string, any> = {
       payload: nextPayload,
       updated_at: new Date().toISOString(),
     }
-    if (patch.invoiceNumber !== undefined) update.invoice_number = patch.invoiceNumber
-    if (patch.clientName !== undefined) update.client_name = patch.clientName
+    if (nameChanged) update.invoice_number = nextPayload.invoiceNumber
+    else if (patch.invoiceNumber !== undefined) update.invoice_number = patch.invoiceNumber
+    if (patch.clientName !== undefined) update.client_name = nextClientName
     if (patch.issueDate !== undefined) update.issue_date = patch.issueDate || null
     if (patch.dueDate !== undefined) update.due_date = patch.dueDate || null
     if (patch.grandTotal !== undefined) update.grand_total = patch.grandTotal

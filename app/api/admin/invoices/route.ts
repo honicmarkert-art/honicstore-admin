@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { validateAdminAccess, createAdminSupabaseClient } from "@/lib/admin-auth"
 import { parseProjectYear, projectYearOrFilter, recordInProjectYear } from "@/lib/project-year"
-import { generateNextInvoiceNumber, nextReferences, referenceForCategory } from "@/lib/invoice-sequence"
+import { generateNextInvoiceNumber, nextReferences, referenceForCategory, sameClientName } from "@/lib/invoice-sequence"
 import { clearInvoiceReadCache, invoiceCacheKey, readInvoiceCache, writeInvoiceCache } from "@/lib/invoice-read-cache"
 import { LIST_INVOICE_SELECT, withSlimPayload } from "@/lib/invoice-row"
 import { z } from "zod"
@@ -59,35 +59,45 @@ export async function POST(request: NextRequest) {
     if (invoice.invoiceId) {
       const { data: existing, error: existingError } = await supabase
         .from(INVOICES_TABLE)
-        .select("id, invoice_number, created_by")
+        .select("id, invoice_number, client_name, created_by, document_kind:payload->documentKind")
         .eq("id", invoice.invoiceId)
         .single()
       if (existingError || !existing) {
         return NextResponse.json({ error: "Invoice not found for update", details: existingError?.message }, { status: 404 })
       }
 
-      const now = new Date().toISOString()
-      const fixedInvoiceNumber = String(existing.invoice_number || invoice.invoiceNumber || "").trim()
+      const documentKind = String(body?.documentKind || existing.document_kind || "invoice")
+      const previousName = String(existing.client_name || "")
+      const nameChanged = documentKind === "invoice" && !sameClientName(previousName, clientName)
       const referenceNumber = await referenceForCategory(supabase, String(body?.projectCategory || ""), String(body?.referenceNumber || ""))
-      const updateRecord = {
-        invoice_number: fixedInvoiceNumber,
-        client_name: clientName,
-        issue_date: invoice.issueDate || null,
-        due_date: invoice.dueDate || null,
-        currency: invoice.currency || "TZS",
-        subtotal: invoice.totals.subtotal,
-        tax_amount: invoice.totals.taxAmount,
-        grand_total: invoice.totals.grandTotal,
-        created_by: existing.created_by || user?.id || null,
-        payload: { ...body, referenceNumber, dashboardScope: invoice.dashboardScope, invoiceNumber: fixedInvoiceNumber },
-        updated_at: now,
+      let updateResult: any = null
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const now = new Date().toISOString()
+        const invoiceNumberToSave = nameChanged
+          ? await generateNextInvoiceNumber(supabase, "invoice", clientName)
+          : String(existing.invoice_number || invoice.invoiceNumber || "").trim()
+        const updateRecord = {
+          invoice_number: invoiceNumberToSave,
+          client_name: clientName,
+          issue_date: invoice.issueDate || null,
+          due_date: invoice.dueDate || null,
+          currency: invoice.currency || "TZS",
+          subtotal: invoice.totals.subtotal,
+          tax_amount: invoice.totals.taxAmount,
+          grand_total: invoice.totals.grandTotal,
+          created_by: existing.created_by || user?.id || null,
+          payload: { ...body, referenceNumber, dashboardScope: invoice.dashboardScope, documentKind, invoiceNumber: invoiceNumberToSave, clientName },
+          updated_at: now,
+        }
+        updateResult = await supabase
+          .from(INVOICES_TABLE)
+          .update(updateRecord)
+          .eq("id", invoice.invoiceId)
+          .select()
+          .single()
+        if (!updateResult.error) break
+        if (!nameChanged || String(updateResult.error?.code || "") !== "23505") break
       }
-      const updateResult = await supabase
-        .from(INVOICES_TABLE)
-        .update(updateRecord)
-        .eq("id", invoice.invoiceId)
-        .select()
-        .single()
       if (updateResult.error) {
         return NextResponse.json(
           {

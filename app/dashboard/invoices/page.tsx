@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { getDeliveryNotePreset, getDeliveryNotePresetByReference, applyDocumentPricesToItems, presetToSourceLinePrices, type SourceLinePrice } from "@/lib/delivery-note-presets"
 import { isAutoCategoryReference, referenceMatchesCategory } from "@/lib/project-reference"
+import { sameClientName } from "@/lib/invoice-sequence"
 import { LOGO_PUBLIC_URL, COMPANY_ADDRESS_DEFAULT, COMPANY_ADDRESS_FOOTER } from "@/lib/technical-report-defaults"
 import { previousProjectPage } from "@/lib/project-page-history"
 import { readSessionCache, writeSessionCache } from "@/lib/session-read-cache"
@@ -718,6 +719,7 @@ export default function AdminInvoicesPage({
   const [showClientApproval, setShowClientApproval] = useState(false)
   const [projectCategory, setProjectCategory] = useState("")
   const nextReferenceCache = useRef<Record<string, string>>({})
+  const numberBaseline = useRef({ id: "", name: "", number: "" })
   const [items, setItems] = useState<InvoiceItem[]>([
     {
       id: "1",
@@ -767,7 +769,10 @@ export default function AdminInvoicesPage({
         const inv = data.invoice as any
         const p = inv?.payload || {}
 
-        setInvoiceNumber(String(inv?.invoice_number || p.invoiceNumber || ""))
+        const loadedName = String(inv?.client_name || p.clientName || "")
+        const loadedNumber = String(inv?.invoice_number || p.invoiceNumber || "")
+        numberBaseline.current = { id: savedInvoiceId, name: loadedName, number: loadedNumber }
+        setInvoiceNumber(loadedNumber)
         const savedKind = String(p.documentKind || "invoice")
         setDocumentKind(savedKind === "quotation" || savedKind === "delivery_note" ? (savedKind as DocumentKind) : "invoice")
         setIssueDate(String(inv?.issue_date || p.issueDate || ""))
@@ -775,7 +780,7 @@ export default function AdminInvoicesPage({
         setCurrency(String(inv?.currency || p.currency || "TZS"))
         setTaxRate(Number(p.taxRate || 0))
         setDiscount(Number(p.discount || 0))
-        setBillToName(String(inv?.client_name || p.clientName || ""))
+        setBillToName(loadedName)
         setBillToEmail(String(p.clientEmail || ""))
         setBillToPhone(String(p.clientPhone || ""))
         setBillToAddress(String(p.clientAddress || ""))
@@ -1148,14 +1153,22 @@ export default function AdminInvoicesPage({
   }, [projectCategory, dashboardScope, documentKind, isLoadingSavedInvoice, isPreviewOnly])
 
   useEffect(() => {
-    if (savedInvoiceId || isLoadingSavedInvoice) return
-    if (documentKind === "invoice" && !billToName.trim()) {
+    if (isLoadingSavedInvoice || isPreviewOnly) return
+    const clientName = billToName.trim()
+    if (savedInvoiceId) {
+      if (documentKind !== "invoice" || !clientName) return
+      const baseline = numberBaseline.current
+      if (baseline.id === savedInvoiceId && sameClientName(baseline.name, clientName)) {
+        if (baseline.number) setInvoiceNumber(baseline.number)
+        return
+      }
+    } else if (documentKind === "invoice" && !clientName) {
       setInvoiceNumber("")
       return
     }
     let cancelled = false
     const timer = window.setTimeout(async () => {
-      const clientQs = documentKind === "invoice" ? `&clientName=${encodeURIComponent(billToName.trim())}` : ""
+      const clientQs = documentKind === "invoice" ? `&clientName=${encodeURIComponent(clientName)}` : ""
       const res = await fetch(`/api/admin/invoices?nextNumber=${documentKind}${clientQs}`, { cache: "no-store", credentials: "include" })
       const data = await res.json().catch(() => null)
       if (!cancelled && res.ok && data?.invoiceNumber) setInvoiceNumber(String(data.invoiceNumber))
@@ -1164,7 +1177,7 @@ export default function AdminInvoicesPage({
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [documentKind, savedInvoiceId, isLoadingSavedInvoice, billToName])
+  }, [documentKind, savedInvoiceId, isLoadingSavedInvoice, isPreviewOnly, billToName])
 
   useEffect(() => {
     if (savedInvoiceId || isLoadingSavedInvoice || !hasProjectTables || !isInvoice || !issueDate) return
@@ -2348,7 +2361,13 @@ export default function AdminInvoicesPage({
         throw new Error(data?.error || data?.details || "Failed to save invoice")
       }
       if (data?.invoice?.invoice_number) {
-        setInvoiceNumber(String(data.invoice.invoice_number))
+        const savedNumber = String(data.invoice.invoice_number)
+        setInvoiceNumber(savedNumber)
+        numberBaseline.current = {
+          id: String(data.invoice.id || savedInvoiceId || ""),
+          name: billToName.trim(),
+          number: savedNumber,
+        }
       }
       if (data?.invoice?.payload?.referenceNumber) {
         const savedReference = String(data.invoice.payload.referenceNumber)

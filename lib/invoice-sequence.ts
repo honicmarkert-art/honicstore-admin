@@ -28,6 +28,11 @@ export function invoiceNumberSeries(documentKind: string | undefined, year: numb
   return { pattern: new RegExp(`^INV-${year}-${mark}-(\\d+)$`), prefix, format: (value) => `${prefix}${value}` }
 }
 
+export function sameClientName(left: string, right: string): boolean {
+  const normalize = (value: string) => String(value || "").trim().replace(/\s+/g, " ").toLowerCase()
+  return normalize(left) === normalize(right)
+}
+
 export function clientInitials(name: string): string {
   const skip = new Set(["of", "and", "the", "for", "a", "an"])
   const letters = String(name || "")
