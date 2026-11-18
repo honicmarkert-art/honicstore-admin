@@ -8,6 +8,7 @@ import { useTheme } from "@/hooks/use-theme"
 import { useCurrency } from "@/contexts/currency-context"
 import { useProjectYear } from "@/contexts/project-year-context"
 import { projectYearLabel } from "@/lib/project-year"
+import { readSessionCache, writeSessionCache } from "@/lib/session-read-cache"
 
 const CATEGORIES = [
   { id: "fyp", label: "FYP projects", detail: "Final year projects" },
@@ -44,11 +45,18 @@ export default function ProjectCategoriesPage() {
   useEffect(() => {
     let cancelled = false
     const load = async () => {
-      setLoading(true)
+      const cacheKey = `project-categories:${selectedYear || "all"}`
+      const cached = readSessionCache<ProjectRow[]>(cacheKey)
+      if (cached) {
+        setRows(cached)
+        setLoading(false)
+      } else {
+        setLoading(true)
+      }
       setError(null)
       try {
         const yearQs = selectedYear ? `&year=${selectedYear}` : ""
-        const res = await fetch(`/api/admin/invoices?limit=200&scope=project${yearQs}&t=${Date.now()}`, {
+        const res = await fetch(`/api/admin/invoices?limit=200&scope=project${yearQs}`, {
           cache: "no-store",
           credentials: "include",
         })
@@ -70,6 +78,7 @@ export default function ProjectCategoriesPage() {
             category: asCategory(invoice.payload?.projectCategory),
           }))
         setRows(next)
+        writeSessionCache(cacheKey, next)
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load projects")
       } finally {

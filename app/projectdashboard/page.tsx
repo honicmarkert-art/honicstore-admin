@@ -8,6 +8,7 @@ import { useTheme } from "@/hooks/use-theme"
 import { useCurrency } from "@/contexts/currency-context"
 import { useProjectYear } from "@/contexts/project-year-context"
 import { projectYearSpan } from "@/lib/project-year"
+import { readSessionCache, writeSessionCache } from "@/lib/session-read-cache"
 
 type Phase = { phase: string; description: string; amount: number; paid: number; due: number }
 
@@ -72,18 +73,25 @@ export default function ProjectDashboardPage() {
   useEffect(() => {
     let cancelled = false
     const load = async () => {
-      setLoading(true)
+      const cacheKey = `project-summary:${selectedYear || "all"}`
+      const cached = readSessionCache<{ rows: Row[]; summary: Summary }>(cacheKey)
+      if (cached) {
+        setRows(cached.rows)
+        setSummary(cached.summary)
+        setLoading(false)
+      } else {
+        setLoading(true)
+      }
       setError(null)
       try {
-        const yearQs = selectedYear ? `&year=${selectedYear}` : ""
-        const res = await fetch(`/api/admin/invoices/service-costs?t=${Date.now()}${yearQs}`, { cache: "no-store", credentials: "include" })
+        const yearQs = selectedYear ? `?year=${selectedYear}` : ""
+        const res = await fetch(`/api/admin/invoices/service-costs${yearQs}`, { cache: "no-store", credentials: "include" })
         const data = await res.json()
         if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load summary")
         if (cancelled) return
         const nextRows = Array.isArray(data.rows) ? data.rows : []
         nextRows.sort((a: Row, b: Row) => String(a.client_name || "").localeCompare(String(b.client_name || "")))
-        setRows(nextRows)
-        setSummary({
+        const nextSummary = {
           invoiceCount: Number(data.summary?.invoiceCount || nextRows.length),
           clientCount: Number(data.summary?.clientCount || 0),
           electrical: Number(data.summary?.electrical || 0),
@@ -94,7 +102,10 @@ export default function ProjectDashboardPage() {
           totalPaid: Number(data.summary?.totalPaid || 0),
           totalDue: Number(data.summary?.totalDue || 0),
           phases: Array.isArray(data.summary?.phases) ? data.summary.phases : [],
-        })
+        }
+        setRows(nextRows)
+        setSummary(nextSummary)
+        writeSessionCache(cacheKey, { rows: nextRows, summary: nextSummary })
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load summary.")
       } finally {

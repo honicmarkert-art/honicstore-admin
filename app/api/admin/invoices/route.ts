@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { validateAdminAccess, createAdminSupabaseClient } from "@/lib/admin-auth"
 import { parseProjectYear, projectYearOrFilter, recordInProjectYear } from "@/lib/project-year"
 import { generateNextInvoiceNumber, nextReferences, referenceForCategory } from "@/lib/invoice-sequence"
+import { clearInvoiceReadCache, invoiceCacheKey, readInvoiceCache, writeInvoiceCache } from "@/lib/invoice-read-cache"
+import { LIST_INVOICE_SELECT, withSlimPayload } from "@/lib/invoice-row"
 import { z } from "zod"
 
 export const dynamic = "force-dynamic"
@@ -96,8 +98,9 @@ export async function POST(request: NextRequest) {
           { status: 500 }
         )
       }
-      return NextResponse.json({ success: true, invoice: updateResult.data })
-    }
+    clearInvoiceReadCache()
+    return NextResponse.json({ success: true, invoice: updateResult.data })
+  }
 
     const documentKind = String(body?.documentKind || "invoice")
     const referenceNumber = await referenceForCategory(supabase, String(body?.projectCategory || ""), "")
@@ -146,6 +149,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    clearInvoiceReadCache()
     return NextResponse.json({ success: true, invoice: insertResult.data })
   } catch (error: any) {
     return NextResponse.json(
@@ -198,6 +202,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, invoice: data || null })
     }
 
+    const cachedList = readInvoiceCache<Record<string, unknown>>(invoiceCacheKey(request.nextUrl))
+    if (cachedList) return NextResponse.json(cachedList)
+
     const q = String(request.nextUrl.searchParams.get("clientName") || "").trim()
     const scope = request.nextUrl.searchParams.get("scope") === "project" ? "project" : "main"
     const summaryOnly = request.nextUrl.searchParams.get("summaryOnly") === "true"
@@ -216,7 +223,7 @@ export async function GET(request: NextRequest) {
     if (!summaryOnly) {
       let query = supabase
         .from(INVOICES_TABLE)
-        .select("id, invoice_number, client_name, issue_date, due_date, currency, grand_total, created_at, payload")
+        .select(LIST_INVOICE_SELECT)
         .order("created_at", { ascending: false })
         .limit(limit)
         .or("payload->>usageTrackingRecord.is.null,payload->>usageTrackingRecord.eq.false")
@@ -250,7 +257,7 @@ export async function GET(request: NextRequest) {
           { status: 500 }
         )
       }
-      invoices = (result.data || []).filter((row: any) => !year || recordInProjectYear(row, year)).map((row: any) => {
+      invoices = (result.data || []).map((row: any) => withSlimPayload(row)).filter((row: any) => !year || recordInProjectYear(row, year)).map((row: any) => {
         const records = row?.payload?.payments?.records
         const paidTotal = Array.isArray(records)
           ? records.reduce((acc: number, r: any) => acc + Number(r?.amount || 0), 0)
@@ -268,7 +275,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Summary for dashboard cards and list header
-    let summaryQuery = supabase.from(INVOICES_TABLE).select("grand_total,issue_date,created_at,payload", { count: "exact" })
+    let summaryQuery = supabase.from(INVOICES_TABLE).select(LIST_INVOICE_SELECT, { count: "exact" }).limit(1000)
     summaryQuery = summaryQuery
       .or("payload->>usageTrackingRecord.is.null,payload->>usageTrackingRecord.eq.false")
       .or("payload->>hiddenFromList.is.null,payload->>hiddenFromList.eq.false")
@@ -287,7 +294,7 @@ export async function GET(request: NextRequest) {
     }
     if (year) summaryQuery = summaryQuery.or(projectYearOrFilter(year))
     const summaryResult = await summaryQuery
-    const summaryRows = (summaryResult.data || []).filter((row: any) => !year || recordInProjectYear(row, year))
+    const summaryRows = (summaryResult.data || []).map((row: any) => withSlimPayload(row)).filter((row: any) => !year || recordInProjectYear(row, year))
     const totalAmount = summaryRows.reduce((sum, row) => sum + Number(row.grand_total || 0), 0)
     const totalCount = year ? summaryRows.length : summaryResult.count || summaryRows.length
     const totalPaid = summaryRows.reduce((sum, row: any) => {
@@ -298,7 +305,7 @@ export async function GET(request: NextRequest) {
     }, 0)
     const totalDue = Math.max(0, totalAmount - totalPaid)
 
-    return NextResponse.json({
+    const body = {
       success: true,
       invoices,
       summary: {
@@ -307,7 +314,9 @@ export async function GET(request: NextRequest) {
         totalPaid,
         totalDue,
       },
-    })
+    }
+    writeInvoiceCache(invoiceCacheKey(request.nextUrl), body)
+    return NextResponse.json(body)
   } catch (error: any) {
     return NextResponse.json(
       { error: "Internal server error", details: error?.message || "Unknown error" },

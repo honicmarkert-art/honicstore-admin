@@ -481,24 +481,43 @@ function parseDraft(raw: string): InvoiceDraft {
   }
 }
 
+function readInvoiceImage(value: unknown): { mimeType: string; data: string } | null {
+  if (!value || typeof value !== "object") return null
+  const raw = value as { mimeType?: unknown; data?: unknown }
+  let mimeType = String(raw.mimeType || "").toLowerCase()
+  let data = String(raw.data || "").trim()
+  const packed = data.match(/^data:(image\/[a-z0-9.+-]+);base64,([a-z0-9+/=\s]+)$/i)
+  if (packed) {
+    mimeType = packed[1].toLowerCase()
+    data = packed[2]
+  }
+  data = data.replace(/\s/g, "")
+  if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(mimeType)) return null
+  if (data.length < 80 || data.length > 6_000_000 || !/^[A-Za-z0-9+/=]+$/.test(data)) return null
+  return { mimeType, data }
+}
+
 async function generateDraft(
   model: string,
   key: string,
   prompt: string,
-  jsonMode: boolean
+  jsonMode: boolean,
+  image: { mimeType: string; data: string } | null
 ): Promise<{ ok: true; text: string } | { ok: false; status: number; message: string }> {
   const generationConfig: Record<string, unknown> = {
     temperature: 0.2,
     maxOutputTokens: 2048,
   }
   if (jsonMode) generationConfig.responseMimeType = "application/json"
+  const parts: Array<Record<string, unknown>> = [{ text: prompt }]
+  if (image) parts.push({ inline_data: { mime_type: image.mimeType, data: image.data } })
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+        contents: [{ parts }],
         generationConfig,
       }),
       signal: AbortSignal.timeout(45000),
@@ -536,8 +555,12 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => null)
     const brief = String(body?.brief || "").trim()
-    if (brief.length < 8) {
-      return NextResponse.json({ error: "Describe the client and the items to put on the invoice" }, { status: 400 })
+    const image = readInvoiceImage(body?.image)
+    if (body?.image && !image) {
+      return NextResponse.json({ error: "Use a JPEG, PNG, or WebP photo under 4 MB" }, { status: 400 })
+    }
+    if (brief.length < 8 && !image) {
+      return NextResponse.json({ error: "Describe the client and the items, or drop a photo" }, { status: 400 })
     }
     if (brief.length > MAX_BRIEF) {
       return NextResponse.json({ error: "That description is too long" }, { status: 400 })
@@ -581,6 +604,7 @@ export async function POST(request: NextRequest) {
       "Use a known client only when the description names that client.",
       "qty is a number. Use 1 when a quantity is not given. Keep the list to the parts that belong to the request, at most 25 lines.",
       "notes stays empty unless the description asks for a special term.",
+      image ? "A photo is attached. Read handwriting, printed labels, quantities, and the parts you can see. The photo is part of the description." : "",
       `Document type: ${documentKind}.`,
       sectionTitles.length ? `Project sections: ${sectionTitles.join(" | ")}.` : "No project sections.",
       catalogPrompt(catalog.items, catalog.clients),
@@ -589,8 +613,8 @@ export async function POST(request: NextRequest) {
 
     let lastMessage = "Gemini request failed"
     for (const model of MODELS) {
-      let result = await generateDraft(model, key, prompt, true)
-      if (!result.ok && result.status === 400) result = await generateDraft(model, key, prompt, false)
+      let result = await generateDraft(model, key, prompt, true, image)
+      if (!result.ok && result.status === 400) result = await generateDraft(model, key, prompt, false, image)
       if (result.ok) {
         const draft = parseDraft(result.text)
         const stated = statedPartRequests(brief)

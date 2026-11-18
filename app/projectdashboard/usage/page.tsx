@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import { useTheme } from "@/hooks/use-theme"
 import { useCurrency } from "@/contexts/currency-context"
 import { useProjectYear } from "@/contexts/project-year-context"
+import { readSessionCache, writeSessionCache } from "@/lib/session-read-cache"
 
 type UsageRow = {
   client_name: string
@@ -54,16 +55,24 @@ export default function ProjectUsagePage() {
   useEffect(() => {
     let cancelled = false
     const load = async () => {
-      setLoading(true)
+      const cacheKey = `project-usage:${selectedYear || "all"}`
+      const cached = readSessionCache<{ rows: UsageRow[]; summary: UsageSummary }>(cacheKey)
+      if (cached) {
+        setRows(cached.rows)
+        setSummary(cached.summary)
+        setLoading(false)
+      } else {
+        setLoading(true)
+      }
       setError(null)
       try {
-        const yearQs = selectedYear ? `&year=${selectedYear}` : ""
-        const res = await fetch(`/api/admin/invoices/project-usage?t=${Date.now()}${yearQs}`, { cache: "no-store", credentials: "include" })
+        const yearQs = selectedYear ? `?year=${selectedYear}` : ""
+        const res = await fetch(`/api/admin/invoices/project-usage${yearQs}`, { cache: "no-store", credentials: "include" })
         const data = await res.json()
         if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load usage summary")
         if (cancelled) return
-        setRows(Array.isArray(data.rows) ? data.rows : [])
-        setSummary({
+        const nextRows = Array.isArray(data.rows) ? data.rows : []
+        const nextSummary = {
           clientCount: Number(data.summary?.clientCount || 0),
           invoiceCount: Number(data.summary?.invoiceCount || 0),
           componentUsage: Number(data.summary?.componentUsage || 0),
@@ -72,7 +81,10 @@ export default function ProjectUsagePage() {
           totalPrice: Number(data.summary?.totalPrice || 0),
           priceUsed: Number(data.summary?.priceUsed || 0),
           remainingPrice: Number(data.summary?.remainingPrice || 0),
-        })
+        }
+        setRows(nextRows)
+        setSummary(nextSummary)
+        writeSessionCache(cacheKey, { rows: nextRows, summary: nextSummary })
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load usage summary")
       } finally {

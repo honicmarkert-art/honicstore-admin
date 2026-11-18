@@ -3,6 +3,7 @@ import { z } from "zod"
 import { validateAdminAccess, createAdminSupabaseClient } from "@/lib/admin-auth"
 import { isAutoCategoryReference, referenceMatchesCategory } from "@/lib/project-reference"
 import { referenceForCategory } from "@/lib/invoice-sequence"
+import { clearInvoiceReadCache } from "@/lib/invoice-read-cache"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -124,6 +125,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
     const { data, error } = await supabase.from(INVOICES_TABLE).update(update).eq("id", id).select("*").single()
     if (error) return NextResponse.json({ error: "Failed to update invoice", details: error.message }, { status: 500 })
+    clearInvoiceReadCache()
     return NextResponse.json({ success: true, invoice: data })
   } catch (error: any) {
     return NextResponse.json({ error: "Internal server error", details: error?.message || "Unknown error" }, { status: 500 })
@@ -141,6 +143,7 @@ export async function DELETE(_: NextRequest, context: { params: Promise<{ id: st
     const { error } = await supabase.from(INVOICES_TABLE).delete().eq("id", id)
     if (error) return NextResponse.json({ error: "Failed to delete invoice", details: error.message }, { status: 500 })
 
+    clearInvoiceReadCache()
     return NextResponse.json({ success: true })
   } catch (error: any) {
     return NextResponse.json({ error: "Internal server error", details: error?.message || "Unknown error" }, { status: 500 })

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { validateAdminAccess, createAdminSupabaseClient } from "@/lib/admin-auth"
+import { invoiceCacheKey, readInvoiceCache, writeInvoiceCache } from "@/lib/invoice-read-cache"
+import { SLIM_INVOICE_SELECT, withSlimPayload } from "@/lib/invoice-row"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -117,9 +119,9 @@ function dedupeCatalogRows(rows: RawCatalogRow[]) {
 async function fetchInvoicesForScope(supabase: any, scope: "project" | "main" | "all") {
   let query = supabase
     .from(INVOICES_TABLE)
-    .select("created_at, payload")
+    .select(SLIM_INVOICE_SELECT)
     .order("created_at", { ascending: false })
-    .limit(1000)
+    .limit(200)
     .or("payload->>usageTrackingRecord.is.null,payload->>usageTrackingRecord.eq.false")
     .or("payload->>hiddenFromList.is.null,payload->>hiddenFromList.eq.false")
 
@@ -140,6 +142,9 @@ export async function GET(request: NextRequest) {
     const { client: supabase, error: envError } = getAdminClient()
     if (envError) return NextResponse.json({ error: envError }, { status: 500 })
 
+    const cached = readInvoiceCache<Record<string, unknown>>(invoiceCacheKey(request.nextUrl))
+    if (cached) return NextResponse.json(cached)
+
     const scopeParam = String(request.nextUrl.searchParams.get("scope") || "all").toLowerCase()
     const scope: "project" | "main" | "all" =
       scopeParam === "project" ? "project" : scopeParam === "main" ? "main" : "all"
@@ -151,12 +156,14 @@ export async function GET(request: NextRequest) {
 
     const collected: RawCatalogRow[] = []
     for (const inv of data || []) {
-      const payload = inv?.payload || {}
+      const payload = withSlimPayload(inv).payload || {}
       const savedAt = String(inv?.created_at || "")
       collected.push(...extractItemsFromPayload(payload, savedAt))
     }
 
-    return NextResponse.json({ success: true, items: dedupeCatalogRows(collected) })
+    const body = { success: true, items: dedupeCatalogRows(collected) }
+    writeInvoiceCache(invoiceCacheKey(request.nextUrl), body)
+    return NextResponse.json(body)
   } catch (error: any) {
     return NextResponse.json({ error: "Internal server error", details: error?.message || "Unknown error" }, { status: 500 })
   }

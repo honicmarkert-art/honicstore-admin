@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils"
 import { getDeliveryNotePreset, getDeliveryNotePresetByReference, applyDocumentPricesToItems, presetToSourceLinePrices, type SourceLinePrice } from "@/lib/delivery-note-presets"
 import { isAutoCategoryReference, referenceMatchesCategory } from "@/lib/project-reference"
 import { LOGO_PUBLIC_URL, COMPANY_ADDRESS_DEFAULT, COMPANY_ADDRESS_FOOTER } from "@/lib/technical-report-defaults"
+import { previousProjectPage } from "@/lib/project-page-history"
+import { readSessionCache, writeSessionCache } from "@/lib/session-read-cache"
 import { useTheme } from "@/hooks/use-theme"
 import { useToast } from "@/hooks/use-toast"
 
@@ -729,6 +731,8 @@ export default function AdminInvoicesPage({
   const [projectTables, setProjectTables] = useState<InvoiceExtraTables | undefined>(extraTables)
   const [isSavingInvoice, setIsSavingInvoice] = useState(false)
   const [aiBrief, setAiBrief] = useState("")
+  const [aiImage, setAiImage] = useState<{ mimeType: string; data: string; preview: string } | null>(null)
+  const [aiDragOver, setAiDragOver] = useState(false)
   const [isAiFilling, setIsAiFilling] = useState(false)
   const [isLoadingSavedInvoice, setIsLoadingSavedInvoice] = useState(false)
   const [detailSectionVisible, setDetailSectionVisible] = useState<Record<DetailSectionKey, boolean>>({
@@ -907,12 +911,20 @@ export default function AdminInvoicesPage({
   }, [referenceNumber, documentKind, isLoadingSavedInvoice])
 
   const refreshSavedItemCatalog = async () => {
-    setIsLoadingSavedItems(true)
+    const cacheKey = "invoice-line-items"
+    const cached = readSessionCache<typeof savedItemCatalog>(cacheKey)
+    if (cached?.length) {
+      setSavedItemCatalog(cached)
+      setIsLoadingSavedItems(false)
+    } else {
+      setIsLoadingSavedItems(true)
+    }
     try {
       const res = await fetch("/api/admin/invoices/line-items?scope=all", { cache: "no-store", credentials: "include" })
       const data = await res.json()
       if (res.ok && data?.success && Array.isArray(data.items)) {
         setSavedItemCatalog(data.items)
+        writeSessionCache(cacheKey, data.items)
       }
     } catch {
       // ignore — picker stays empty until next load
@@ -1286,9 +1298,28 @@ export default function AdminInvoicesPage({
     })
   }
 
+  const readAiPhoto = (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Use a photo", description: "Drop a JPEG, PNG, or WebP image.", variant: "destructive" })
+      return
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      toast({ title: "Photo is too large", description: "Use a photo under 8 MB.", variant: "destructive" })
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const preview = String(reader.result || "")
+      const data = preview.split(",")[1] || ""
+      if (!data) return
+      setAiImage({ mimeType: file.type || "image/jpeg", data, preview })
+    }
+    reader.readAsDataURL(file)
+  }
+
   const fillInvoiceFromBrief = async () => {
     const brief = aiBrief.trim()
-    if (brief.length < 8 || isAiFilling) return
+    if ((brief.length < 8 && !aiImage) || isAiFilling) return
     setIsAiFilling(true)
     try {
       const response = await fetch("/api/admin/invoices/assist", {
@@ -1296,6 +1327,7 @@ export default function AdminInvoicesPage({
         headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             brief,
+            image: aiImage ? { mimeType: aiImage.mimeType, data: aiImage.data } : null,
             documentKind,
             dashboardScope,
             sections: (projectTables?.sections || []).map((section) => section.title),
@@ -2415,10 +2447,20 @@ export default function AdminInvoicesPage({
         </div>
       ) : (
         <div className="invoice-tools mb-4">
-          <Link href={backToSavedInvoice} className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900">
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900"
+            onClick={() => {
+              if (dashboardScope === "project") {
+                router.push(previousProjectPage(`${pathname || ""}${window.location.search}`))
+                return
+              }
+              router.push(backToSavedInvoice)
+            }}
+          >
             <ArrowLeft className="h-4 w-4" />
             Back
-          </Link>
+          </button>
         </div>
       )}
       <div className={cn("flex w-full flex-col gap-8 lg:flex-row lg:items-start")}>
@@ -2449,10 +2491,45 @@ export default function AdminInvoicesPage({
                 placeholder="Example: Niandikie invoice ya buck converter, 10 res, 10 cap, na wire mita 10."
                 className="resize-y border-slate-200 bg-white text-sm"
               />
+              <div
+                onDragOver={(event) => {
+                  event.preventDefault()
+                  setAiDragOver(true)
+                }}
+                onDragLeave={() => setAiDragOver(false)}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  setAiDragOver(false)
+                  const file = event.dataTransfer.files?.[0]
+                  if (file) readAiPhoto(file)
+                }}
+                className={cn("mt-2 rounded-md border border-dashed px-2.5 py-3 text-center", aiDragOver ? "border-[#184a96] bg-blue-50" : "border-slate-300 bg-white")}
+              >
+                {aiImage ? (
+                  <div className="space-y-2">
+                    <img src={aiImage.preview} alt="" className="mx-auto h-20 w-full rounded object-cover" />
+                    <button type="button" className="text-xs font-semibold text-slate-500" onClick={() => setAiImage(null)}>Remove photo</button>
+                  </div>
+                ) : (
+                  <label className="block cursor-pointer text-xs text-slate-500">
+                    Drop a photo of the list or the parts
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0]
+                        if (file) readAiPhoto(file)
+                        event.target.value = ""
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={fillInvoiceFromBrief}
-                disabled={isAiFilling || aiBrief.trim().length < 8}
+                disabled={isAiFilling || (aiBrief.trim().length < 8 && !aiImage)}
                 className="mt-2 flex w-full items-center gap-2 rounded-md bg-[#184a96] px-2.5 py-2 text-left text-sm font-semibold text-white disabled:opacity-50"
               >
                 <Sparkles className="h-4 w-4" />
@@ -2800,11 +2877,25 @@ export default function AdminInvoicesPage({
               ) : null}
 
               {(projectTables?.sections || []).map((section, sectionIndex) => {
-                if (!isProjectSectionVisible(section)) return null
+                const sectionVisible = isProjectSectionVisible(section)
+                if (!sectionVisible && isPreviewOnly) return null
                 const prototypeSection = isPrototypeSectionTitle(section.title)
                 const previewCols = isDeliveryNote ? deliveryNoteColumns(section.columns) : section.columns
                 return (
                 <div key={section.title} className="mt-2 px-6">
+                  {!isPreviewOnly ? (
+                    <label className="sheet-only-screen mb-1.5 flex items-center gap-2 text-xs text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={sectionVisible}
+                        onChange={(event) => toggleProjectSectionVisibility(sectionIndex, event.target.checked)}
+                        className="h-3.5 w-3.5 rounded border-slate-300"
+                      />
+                      Use {section.title}
+                    </label>
+                  ) : null}
+                  {sectionVisible ? (
+                  <>
                   <p className="mb-1.5 text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-900">{section.title}</p>
                   <div className="overflow-x-auto border border-slate-300">
                     <table className="min-w-full table-fixed border-collapse">
@@ -2908,6 +2999,8 @@ export default function AdminInvoicesPage({
                       Add line
                     </button>
                   ) : null}
+                  </>
+                  ) : null}
                 </div>
                 )
               })}
@@ -2954,8 +3047,21 @@ export default function AdminInvoicesPage({
               </div>
               ) : null}
 
-              {showPaymentScheduleTable && paymentScheduleDisplay.length ? (
+              {projectTables?.paymentSchedule?.length && docLabels.showPaymentSchedule && (showPaymentScheduleTable || !isPreviewOnly) ? (
                 <div className="mt-2 px-6">
+                  {!isPreviewOnly ? (
+                    <label className="sheet-only-screen mb-1.5 flex items-center gap-2 text-xs text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={projectTables.hidePaymentSchedule !== true}
+                        onChange={(event) => togglePaymentScheduleVisibility(event.target.checked)}
+                        className="h-3.5 w-3.5 rounded border-slate-300"
+                      />
+                      Use payment schedule
+                    </label>
+                  ) : null}
+                  {showPaymentScheduleTable && paymentScheduleDisplay.length ? (
+                  <>
                   <p className="mb-1.5 text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-900">PAYMENT SCHEDULE</p>
                   <div className="overflow-x-auto border border-slate-300">
                     <table className="min-w-full border-collapse">
@@ -3003,6 +3109,8 @@ export default function AdminInvoicesPage({
                       </tbody>
                     </table>
                   </div>
+                  </>
+                  ) : null}
                 </div>
               ) : null}
 

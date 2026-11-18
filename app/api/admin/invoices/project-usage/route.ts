@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { validateAdminAccess, createAdminSupabaseClient } from "@/lib/admin-auth"
 import { parseProjectYear, projectYearOrFilter, recordInProjectYear } from "@/lib/project-year"
+import { clearInvoiceReadCache, invoiceCacheKey, readInvoiceCache, writeInvoiceCache } from "@/lib/invoice-read-cache"
+import { SLIM_INVOICE_SELECT, withSlimPayload } from "@/lib/invoice-row"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -40,12 +42,15 @@ export async function GET(request: NextRequest) {
     const { client: supabase, error: envError } = getAdminClient()
     if (envError) return NextResponse.json({ error: envError }, { status: 500 })
 
+    const cached = readInvoiceCache<Record<string, unknown>>(invoiceCacheKey(request.nextUrl))
+    if (cached) return NextResponse.json(cached)
+
     const requestedClient = String(request.nextUrl.searchParams.get("clientName") || "").trim()
     const year = parseProjectYear(request.nextUrl.searchParams.get("year"))
 
     let invoiceQuery = supabase
       .from(INVOICES_TABLE)
-      .select("id, client_name, grand_total, issue_date, created_at, payload")
+      .select(SLIM_INVOICE_SELECT)
       .order("issue_date", { ascending: false })
       .limit(1000)
       .or("payload->>dashboardScope.eq.project,payload->>dashboardScope.is.null")
@@ -59,7 +64,7 @@ export async function GET(request: NextRequest) {
 
     const usageRecordsResult = await supabase
       .from(INVOICES_TABLE)
-      .select("client_name, payload")
+      .select("client_name, usage_entry:payload->projectUsageEntry")
       .eq(`payload->>${USAGE_RECORD_KEY}`, "true")
       .limit(1000)
 
@@ -76,7 +81,7 @@ export async function GET(request: NextRequest) {
     >()
     for (const row of usageRecordsResult.data || []) {
       const key = String(row?.client_name || "Unknown").trim() || "Unknown"
-      const entry = row?.payload?.projectUsageEntry || {}
+      const entry = row?.usage_entry || row?.payload?.projectUsageEntry || {}
       usageMap.set(key, {
         component: Number(entry.componentUsage || 0),
         prototype: Number(entry.prototypeUsage || 0),
@@ -89,7 +94,8 @@ export async function GET(request: NextRequest) {
 
     const bucket = new Map<string, any>()
 
-    const invoices = year ? (data || []).filter((row: any) => recordInProjectYear(row, year)) : data || []
+    const loaded = (data || []).map((row: any) => withSlimPayload(row))
+    const invoices = year ? loaded.filter((row: any) => recordInProjectYear(row, year)) : loaded
     for (const inv of invoices) {
       const payload = inv?.payload || {}
       const sections = payload?.projectTables?.sections || []
@@ -182,7 +188,9 @@ export async function GET(request: NextRequest) {
       }
     )
 
-    return NextResponse.json({ success: true, rows, summary })
+    const body = { success: true, rows, summary }
+    writeInvoiceCache(invoiceCacheKey(request.nextUrl), body)
+    return NextResponse.json(body)
   } catch (error: any) {
     return NextResponse.json({ error: "Internal server error", details: error?.message || "Unknown error" }, { status: 500 })
   }
@@ -246,6 +254,7 @@ export async function POST(request: NextRequest) {
       if (updated.error) {
         return NextResponse.json({ error: "Failed to update usage entry", details: updated.error.message }, { status: 500 })
       }
+      clearInvoiceReadCache()
       return NextResponse.json({ success: true, id: updated.data.id })
     }
 
@@ -276,6 +285,7 @@ export async function POST(request: NextRequest) {
     if (inserted.error) {
       return NextResponse.json({ error: "Failed to create usage entry", details: inserted.error.message }, { status: 500 })
     }
+    clearInvoiceReadCache()
     return NextResponse.json({ success: true, id: inserted.data.id })
   } catch (error: any) {
     return NextResponse.json({ error: "Internal server error", details: error?.message || "Unknown error" }, { status: 500 })

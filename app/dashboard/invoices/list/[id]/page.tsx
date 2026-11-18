@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import Link from "next/link"
 import { useParams, usePathname, useSearchParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -10,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useTheme } from "@/hooks/use-theme"
 import { useCurrency } from "@/contexts/currency-context"
+import { previousProjectPage } from "@/lib/project-page-history"
 
 type PaymentRecord = { id: string; date: string; amount: number; note?: string }
 type InvoiceRow = {
@@ -325,8 +325,18 @@ export default function SavedInvoiceDetailPage() {
           <h1 className="text-3xl font-bold tracking-tight">Payments</h1>
           <p className={cn("mt-1 text-sm", themeClasses.textNeutralSecondary)}>Record payments made and track due balance.</p>
         </div>
-        <Button asChild variant="outline">
-          <Link href={`${listBasePath}?scope=${scope}`}>Back to list</Link>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            if (pathname?.startsWith("/projectdashboard")) {
+              router.push(previousProjectPage(`${pathname}${window.location.search}`))
+              return
+            }
+            router.push(`${listBasePath}?scope=${scope}`)
+          }}
+        >
+          Back
         </Button>
       </div>
 

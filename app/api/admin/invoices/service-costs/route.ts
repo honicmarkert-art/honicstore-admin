@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { validateAdminAccess, createAdminSupabaseClient } from "@/lib/admin-auth"
 import { parseProjectYear, projectYearOrFilter, recordInProjectYear } from "@/lib/project-year"
+import { invoiceCacheKey, readInvoiceCache, writeInvoiceCache } from "@/lib/invoice-read-cache"
+import { SLIM_INVOICE_SELECT, withSlimPayload } from "@/lib/invoice-row"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -64,7 +66,7 @@ function allocateToSchedule(totalPaid: number, schedule: number[]): number[] {
 async function fetchInvoicesForScope(supabase: any, scope: "project" | "main" | "all", year: number | null) {
   let query = supabase
     .from(INVOICES_TABLE)
-    .select("id, invoice_number, client_name, grand_total, tax_amount, issue_date, created_at, payload")
+    .select(SLIM_INVOICE_SELECT)
     .order("issue_date", { ascending: false })
     .limit(1000)
     .or("payload->>hiddenFromList.is.null,payload->>hiddenFromList.eq.false")
@@ -91,12 +93,15 @@ export async function GET(request: NextRequest) {
     const requestedScope: "project" | "main" | "all" =
       scopeParam === "main" ? "main" : scopeParam === "all" ? "all" : "project"
 
+    const cached = readInvoiceCache<Record<string, unknown>>(invoiceCacheKey(request.nextUrl))
+    if (cached) return NextResponse.json(cached)
+
     const year = parseProjectYear(request.nextUrl.searchParams.get("year"))
     const { data, error } = await fetchInvoicesForScope(supabase, requestedScope, year)
     if (error) {
       return NextResponse.json({ error: "Failed to load remaining prices", details: error.message }, { status: 500 })
     }
-    const source = (data || []).filter((row: any) => {
+    const source = (data || []).map((row: any) => withSlimPayload(row)).filter((row: any) => {
       if (!isFinancialInvoice(row?.payload)) return false
       return !year || recordInProjectYear(row, year)
     })
@@ -175,7 +180,7 @@ export async function GET(request: NextRequest) {
     )
     const paidByPhase = allocateToSchedule(summary.totalPaid, summary.phases)
 
-    return NextResponse.json({
+    const body = {
       success: true,
       rows,
       summary: {
@@ -197,7 +202,9 @@ export async function GET(request: NextRequest) {
         })),
       },
       totalCount: rows.length,
-    })
+    }
+    writeInvoiceCache(invoiceCacheKey(request.nextUrl), body)
+    return NextResponse.json(body)
   } catch (error: any) {
     return NextResponse.json({ error: "Internal server error", details: error?.message || "Unknown error" }, { status: 500 })
   }

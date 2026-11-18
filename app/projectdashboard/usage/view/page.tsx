@@ -1,14 +1,15 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import Link from "next/link"
-import { useSearchParams } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { previousProjectPage } from "@/lib/project-page-history"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useTheme } from "@/hooks/use-theme"
 import { useCurrency } from "@/contexts/currency-context"
 import { useProjectYear } from "@/contexts/project-year-context"
+import { readSessionCache, writeSessionCache } from "@/lib/session-read-cache"
 
 type Row = {
   client_name: string
@@ -31,6 +32,8 @@ export default function ProjectUsageViewPage() {
   const { formatPrice } = useCurrency()
   const projectYear = useProjectYear()
   const selectedYear = projectYear?.year
+  const router = useRouter()
+  const pathname = usePathname()
   const sp = useSearchParams()
   const clientName = String(sp.get("clientName") || "").trim()
   const [row, setRow] = useState<Row | null>(null)
@@ -45,11 +48,18 @@ export default function ProjectUsageViewPage() {
         setError("Client name is required.")
         return
       }
-      setLoading(true)
+      const cacheKey = `project-usage-detail:${selectedYear || "all"}:${clientName}`
+      const cached = readSessionCache<Row>(cacheKey)
+      if (cached) {
+        setRow(cached)
+        setLoading(false)
+      } else {
+        setLoading(true)
+      }
       setError(null)
       try {
         const yearQs = selectedYear ? `&year=${selectedYear}` : ""
-        const res = await fetch(`/api/admin/invoices/project-usage?clientName=${encodeURIComponent(clientName)}&t=${Date.now()}${yearQs}`, {
+        const res = await fetch(`/api/admin/invoices/project-usage?clientName=${encodeURIComponent(clientName)}${yearQs}`, {
           cache: "no-store",
           credentials: "include",
         })
@@ -58,6 +68,7 @@ export default function ProjectUsageViewPage() {
         if (cancelled) return
         const first = Array.isArray(data.rows) && data.rows.length ? data.rows[0] : null
         setRow(first)
+        if (first) writeSessionCache(cacheKey, first)
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load usage detail")
       } finally {
@@ -79,8 +90,8 @@ export default function ProjectUsageViewPage() {
             Real invoice price vs used price per section and total usage.
           </p>
         </div>
-        <Button asChild variant="outline">
-          <Link href="/projectdashboard/usage">Back to usage table</Link>
+        <Button type="button" variant="outline" onClick={() => router.push(previousProjectPage(`${pathname}${window.location.search}`))}>
+          Back
         </Button>
       </div>
 

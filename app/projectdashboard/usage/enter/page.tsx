@@ -1,8 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import Link from "next/link"
-import { useSearchParams } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { previousProjectPage } from "@/lib/project-page-history"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,6 +12,8 @@ import { useTheme } from "@/hooks/use-theme"
 
 export default function EnterProjectUsagePage() {
   const { themeClasses } = useTheme()
+  const router = useRouter()
+  const pathname = usePathname()
   const sp = useSearchParams()
   const clientName = String(sp.get("clientName") || "").trim()
   const [componentUsage, setComponentUsage] = useState(0)
@@ -69,8 +71,8 @@ export default function EnterProjectUsagePage() {
             Save used amounts for component, prototype, and service for this client.
           </p>
         </div>
-        <Button asChild variant="outline">
-          <Link href="/projectdashboard/usage">Back to usage table</Link>
+        <Button type="button" variant="outline" onClick={() => router.push(previousProjectPage(`${pathname}${window.location.search}`))}>
+          Back
         </Button>
       </div>
 

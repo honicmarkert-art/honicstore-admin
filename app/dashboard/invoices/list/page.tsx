@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils"
 import { useTheme } from "@/hooks/use-theme"
 import { useCurrency } from "@/contexts/currency-context"
 import { useProjectYear } from "@/contexts/project-year-context"
+import { readSessionCache, writeSessionCache } from "@/lib/session-read-cache"
 
 type SavedInvoice = {
   id: string
@@ -77,7 +78,20 @@ export default function InvoiceClientsListPage({
   useEffect(() => {
     const ctrl = new AbortController()
     const t = window.setTimeout(async () => {
-      if (invoices.length === 0) setLoading(true)
+      const cacheKey = `invoice-list:${dashboardScope}:${documentKind || "all"}:${selectedYear || "all"}:${query.trim()}`
+      const cached = readSessionCache<InvoiceResponse>(cacheKey)
+      if (cached?.success) {
+        setInvoices(Array.isArray(cached.invoices) ? cached.invoices : [])
+        setSummary({
+          totalCount: Number(cached.summary?.totalCount || 0),
+          totalAmount: Number(cached.summary?.totalAmount || 0),
+          totalPaid: Number(cached.summary?.totalPaid || 0),
+          totalDue: Number(cached.summary?.totalDue || 0),
+        })
+        setLoading(false)
+      } else if (invoices.length === 0) {
+        setLoading(true)
+      }
       setError(null)
       try {
         const sourceScope = dashboardScope === "project" ? "project" : "main"
@@ -96,12 +110,14 @@ export default function InvoiceClientsListPage({
           throw new Error("Failed to load invoices list")
         }
         setInvoices(Array.isArray(data.invoices) ? data.invoices : [])
-        setSummary({
+        const nextSummary = {
           totalCount: Number(data.summary?.totalCount || 0),
           totalAmount: Number(data.summary?.totalAmount || 0),
           totalPaid: Number(data.summary?.totalPaid || 0),
           totalDue: Number(data.summary?.totalDue || 0),
-        })
+        }
+        setSummary(nextSummary)
+        writeSessionCache(cacheKey, { ...data, invoices: Array.isArray(data.invoices) ? data.invoices : [], summary: nextSummary })
       } catch (e) {
         if (!ctrl.signal.aborted) setError(e instanceof Error ? e.message : "Failed to load invoices.")
       } finally {

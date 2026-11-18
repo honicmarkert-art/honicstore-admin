@@ -10,6 +10,7 @@ import { useTheme } from "@/hooks/use-theme"
 import { useAuth } from "@/contexts/auth-context"
 import { ProjectYearProvider, useProjectYear } from "@/contexts/project-year-context"
 import { projectYearLabel, projectYearSpan } from "@/lib/project-year"
+import { previousProjectPage, rememberProjectPage } from "@/lib/project-page-history"
 
 type ProjectDashboardLayoutProps = {
   children: ReactNode
@@ -32,12 +33,12 @@ export default function ProjectDashboardLayout({ children }: ProjectDashboardLay
   const { loading, isAuthenticated, isAdmin, user } = useAuth()
   const [navExpanded, setNavExpanded] = useState(true)
 
+  useEffect(() => {
+    rememberProjectPage(`${window.location.pathname}${window.location.search}`)
+  }, [pathname])
+
   const handleBack = () => {
-    if (typeof window !== "undefined" && window.history.length > 1) {
-      router.back()
-      return
-    }
-    router.push("/projectdashboard")
+    router.push(previousProjectPage(`${window.location.pathname}${window.location.search}`))
   }
 
   useEffect(() => {
