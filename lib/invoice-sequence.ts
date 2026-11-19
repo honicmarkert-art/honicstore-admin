@@ -27,7 +27,9 @@ export function invoiceNumberSeries(documentKind: string | undefined, year: numb
   // Pattern matches INV-year-initials-HCIR-number, but we search all invoices globally
   const prefix = `INV-${year}-${mark}-`
   return {
-    pattern: new RegExp(`^INV-${year}-.*-HCIR-(\\d+)$`),
+    // Pattern allows optional client initials: INV-yyyy-[initials]-HCIR-nnnn or INV-yyyy-HCIR-nnnn
+    // Use non-capturing group for initials so capture group 1 is always the number
+    pattern: new RegExp(`^INV-${year}-(?:.*-)?HCIR-(\\d+)$`),
     prefix,
     format: (value) => `${prefix}${value}`
   }
