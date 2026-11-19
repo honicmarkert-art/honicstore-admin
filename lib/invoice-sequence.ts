@@ -24,13 +24,13 @@ export function invoiceNumberSeries(documentKind: string | undefined, year: numb
   }
   const initials = clientInitials(clientName)
   const mark = initials ? `${initials}-HCIR` : "HCIR"
+  // Pattern matches INV-year-initials-HCIR-number, but we search all invoices globally
   const prefix = `INV-${year}-${mark}-`
-  return { pattern: new RegExp(`^INV-${year}-${mark}-(\\d+)$`), prefix, format: (value) => `${prefix}${value}` }
-}
-
-export function sameClientName(left: string, right: string): boolean {
-  const normalize = (value: string) => String(value || "").trim().replace(/\s+/g, " ").toLowerCase()
-  return normalize(left) === normalize(right)
+  return {
+    pattern: new RegExp(`^INV-${year}-.*-HCIR-(\\d+)$`),
+    prefix,
+    format: (value) => `${prefix}${value}`
+  }
 }
 
 export function clientInitials(name: string): string {
