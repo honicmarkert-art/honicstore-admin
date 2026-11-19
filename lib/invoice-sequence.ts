@@ -45,6 +45,11 @@ export function clientInitials(name: string): string {
   return letters.join("").slice(0, 4)
 }
 
+export function sameClientName(left: string, right: string): boolean {
+  const normalize = (value: string) => String(value || "").trim().replace(/\s+/g, " ").toLowerCase()
+  return normalize(left) === normalize(right)
+}
+
 function nextFromMatches(values: string[], pattern: RegExp, format: (value: string) => string): string {
   const maxNum = values.reduce((max, value) => {
     const match = String(value || "").trim().match(pattern)
